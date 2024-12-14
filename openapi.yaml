@@ -1,0 +1,127 @@
+openapi: 3.0.0
+info:
+  title: Conversation and Embedding API
+  description: API server schema for managing conversations and embeddings.
+  version: 1.0.0
+servers:
+  - url: https://api.example.com
+
+paths:
+  /create-conversation:
+    post:
+      summary: Create a new conversation
+      description: Creates a new conversation and associates it with a session.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                pdfDocument:
+                  type: string
+                  format: binary
+                  description: The PDF document to be uploaded.
+                sessionId:
+                  type: string
+                  description: Session ID that uniquely identifies the session.
+                conversationId:
+                  type: string
+                  description: Conversation ID that, together with the session ID, uniquely identifies an embedding.
+              required:
+                - pdfDocument
+                - sessionId
+                - conversationId
+      responses:
+        '200':
+          description: Conversation successfully created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversationId:
+                    type: string
+                    description: The ID of the created conversation.
+
+  /conversation:
+    get:
+      summary: Retrieve a conversation
+      description: Retrieves a conversation by its ID.
+      parameters:
+        - name: conversationId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The ID of the conversation to retrieve.
+      responses:
+        '200':
+          description: Conversation successfully retrieved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: The ID of the conversation.
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+                  embeddingId:
+                    type: string
+                    nullable: true
+                    description: Optional embedding ID associated with the conversation.
+
+  /embedding:
+    get:
+      summary: Retrieve an embedding
+      description: Retrieves an embedding using the session ID and conversation ID.
+      parameters:
+        - name: sessionId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The ID of the session.
+        - name: conversationId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The ID of the conversation.
+      responses:
+        '200':
+          description: Embedding successfully retrieved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId:
+                    type: string
+                    description: The ID of the session.
+                  conversationId:
+                    type: string
+                    description: The ID of the conversation.
+                  content:
+                    type: string
+                    description: The content of the embedding.
+
+components:
+  schemas:
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique ID of the message.
+        content:
+          type: string
+          description: The content of the message.
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp of when the message was created.
