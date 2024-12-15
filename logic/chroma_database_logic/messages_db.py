@@ -75,9 +75,9 @@ def get_new_message(query_text, conversation_id, selected_dataset_name=None) -> 
     # Get context from dataset, if one is selected
     if selected_dataset_name is not None:
         dataset_context = get_dataset_context(selected_dataset_name, query_text)
-        context_text = f"{"\n\n---\n\n".join(documents)}"
+        context_text = "{}".format('\n---\n'.join(documents))
         if dataset_context != None and dataset_context != "":
-            context_text = f"{context_text}\n\n---\n\n{"DATASET CONTEXT: " + dataset_context if dataset_context is not None else "[]"}"
+            context_text = f"{context_text}\n\n---\n\n{'DATASET CONTEXT: ' + dataset_context if dataset_context is not None else '[]'}"
 
     # TODO: Get context from the conversation history
     conversation_history = "[]"

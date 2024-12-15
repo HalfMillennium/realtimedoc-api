@@ -49,9 +49,9 @@ def split_text(documents: list[Document]) -> list[Document]:
     logger.info(f"Split {len(documents)} documents into {len(chunks)} chunks.")
 
     if chunks:
-        document = chunks[10]
-        logger.info(document.page_content)
-        logger.info(document.metadata)
+        document = chunks[0]
+        logger.info('chunk[0] page_content', document.page_content)
+        logger.info('chunk[0] metadata', document.metadata)
 
     return chunks
 
