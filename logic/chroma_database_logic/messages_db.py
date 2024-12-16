@@ -1,6 +1,3 @@
-import argparse
-import shutil
-# from dataclasses import dataclass
 from langchain_community.vectorstores import Chroma
 from langchain_openai import OpenAIEmbeddings
 from langchain_openai import ChatOpenAI
@@ -12,9 +9,11 @@ import os
 import uuid
 from ..utils import CHROMA_PATH, embed_text
 from langchain.schema import Document
-from .manage_database import generate_data_store, get_embeddings_from_db, clear_embeddings, clear_hashes
+from .manage_database import generate_data_store, get_embeddings_from_db, clear_embeddings, clear_hashes, save_messages_to_db, ChatMessage
 from typing import List, Dict
 from ..dataset_tools.financial_news.get_market_news import query_market
+import datetime
+import logging
 
 class MessageDBResponse:
     def __init__(self, message: str, conversationId: str, conversationTitle: str, warning: str, allMessages: List[str] = None, data_store_generation_response: str = None, context_used: str = None, sources: set = None, metadata: dict = None):
@@ -35,6 +34,10 @@ load_dotenv()
 # your .env file.
 openai.api_key = os.environ['OPENAI_API_KEY']
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 PROMPT_TEMPLATE = """
 Answer the question based on the following context:
 
@@ -49,16 +52,19 @@ Also consider the conversation history: {conversation_history}, and make this re
 Answer the question based on the above context: {question}
 """
 
+DEFAULT_BOT_MESSAGE = "Hi there! I've gone through your document and know it like the back of my hand. Go ahead — ask me anything!"
+
 def get_new_message(query_text, conversation_id, selected_dataset_name=None) -> MessageDBResponse:
     # Initialize the persistent client
     client = chromadb.PersistentClient(path=CHROMA_PATH)
     warning = ""
     # Load the existing collection
-    collection = client.get_collection(name=conversation_id)
-    if(collection is None or collection.id is None):
+    conversation_collection = client.get_collection(name=conversation_id)
+    embeddings_collection = conversation_collection.get_subcgetollection(name="embeddings")
+    if(embeddings_collection is None or conversation_collection.id is None):
         return MessageDBResponse(message="Collection not found.", conversationId=conversation_id, conversationTitle="", warning="Collection not found.")
     query_embedding = embed_text(query_text)
-    results = collection.query(
+    results = embeddings_collection.query(
         query_embeddings=[query_embedding],
         n_results=10,
         include=["documents", "metadatas", "distances"]
@@ -80,7 +86,7 @@ def get_new_message(query_text, conversation_id, selected_dataset_name=None) -> 
             context_text = f"{context_text}\n\n---\n\n{'DATASET CONTEXT: ' + dataset_context if dataset_context is not None else '[]'}"
 
     # TODO: Get context from the conversation history
-    conversation_history = "[]"
+    conversation_history = conversation_collection.get_subcollection(name="messages")
 
     prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
     prompt = prompt_template.format(context=context_text, question=query_text, conversation_history=conversation_history)
@@ -91,7 +97,7 @@ def get_new_message(query_text, conversation_id, selected_dataset_name=None) -> 
 
     sources = [metadata.get("source", None) for metadata in metadatas]
 
-    return { "message": response_text, "collectionId": collection.id, "warning": warning, "context_used": context_text, "sources": set(sources) }
+    return { "message": response_text, "collectionId": conversation_id, "warning": warning, "context_used": context_text, "sources": set(sources) }
 
 def get_dataset_context(selected_dataset_name: str, query_text: str) -> str:
     if selected_dataset_name is not None:
@@ -101,9 +107,17 @@ def get_dataset_context(selected_dataset_name: str, query_text: str) -> str:
         return f"'{selected_dataset_name}' is not a recognized dataset."
     return None
 
+def initialize_conversation_messages(userId: str, conversationId: str):
+    default_message = ChatMessage(
+        author="RealTimeDoc AI",
+        content=DEFAULT_BOT_MESSAGE,
+        timestamp=datetime.now().strftime("%m/%d/%Y, %I:%M:%S %p")
+    )
+    result = save_messages_to_db(conversationId, [default_message])
+    logger.info(result)
+    return result
+
 def initialize_embedding(document: Document, userId: str, fileName: str) -> MessageDBResponse:
-    # Initialize the persistent client
-    client = chromadb.PersistentClient(path=CHROMA_PATH)
     warning = ""
     collectionId = str(uuid.uuid4())
 
@@ -114,7 +128,7 @@ def initialize_embedding(document: Document, userId: str, fileName: str) -> Mess
 
     # Create and return the ConversationResponse object
     return MessageDBResponse(
-        message="Hi there! I've gone through your document and know it like the back of my hand. Go ahead — ask me anything!",
+        message=DEFAULT_BOT_MESSAGE,
         conversationId=collectionId,
         conversationTitle=fileName,
         allMessages=[],

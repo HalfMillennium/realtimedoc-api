@@ -88,7 +88,7 @@ def get_embeddings_from_db():
         return None
 
 
-def save_embedding_to_db(chunks: list[Document], collectionId: str) -> str:
+def save_embedding_to_db(chunks: list[Document], conversationId: str) -> str:
     # Load existing hashes
     existing_hashes = load_hashes()
     new_hashes = set()
@@ -113,8 +113,10 @@ def save_embedding_to_db(chunks: list[Document], collectionId: str) -> str:
         # Initialize the persistent client
         client = chromadb.PersistentClient(path=CHROMA_PATH)
 
-        # Create or load a collection
-        collection = client.create_collection(name=collectionId)
+        # Create parent + child collection
+        conversation_collection = client.create_collection(name=conversationId)
+        
+        embeddings_collection = conversation_collection.create_collection('embeddings')
 
         # Prepare data for insertion
         documents = [chunk.page_content for chunk in unique_chunks]
@@ -122,7 +124,7 @@ def save_embedding_to_db(chunks: list[Document], collectionId: str) -> str:
         ids = [str(uuid.uuid4()) for _ in unique_chunks]
 
         # Add data to the collection
-        collection.add(
+        embeddings_collection.insert(
             documents=documents,
             metadatas=metadatas,
             ids=ids,
@@ -133,8 +135,8 @@ def save_embedding_to_db(chunks: list[Document], collectionId: str) -> str:
         existing_hashes.update(new_hashes)
         save_hashes(existing_hashes)
 
-        logger.info(f"Saved {len(unique_chunks)} embeddings to the database as collection {collectionId}.")
-        return f"Saved {len(unique_chunks)} embeddings to the database as collection {collectionId}."
+        logger.info(f"Saved {len(unique_chunks)} embeddings to the database in (parent) collection {conversationId}.")
+        return f"Saved {len(unique_chunks)} embeddings to the database in (parent) collection {conversationId}."
     except Exception as e:
         logger.error(f"Failed to save embeddings to the database: {e}")
         return f"Failed to save embeddings to the database: {e}"
@@ -167,3 +169,42 @@ def clear_hashes():
         return True
     logger.info(f"Could not find hashes at {HASHES_FILE}.")
     return False
+
+class ChatMessage:
+    def __init__(self, content: str, author: str, timestamp: str):
+        self.content = content
+        self.author = author
+        self.timestamp = timestamp
+
+def save_messages_to_db(conversationId: str, messages: list[ChatMessage]):
+    try:
+        # Initialize the persistent client
+        client = chromadb.PersistentClient(path=CHROMA_PATH)
+
+        # Load conversation
+        conversation_collection = client.get_collection(name=conversationId)
+
+        # Create or load the messages subcollection
+        try:
+            messages_collection = conversation_collection.get_collection('messages')
+        except Exception:
+            messages_collection = conversation_collection.create_collection('messages')
+
+        # Prepare data for insertion
+        documents = [message.content for message in messages]
+        metadatas = [message.metadata for message in messages]
+        ids = [str(uuid.uuid4()) for _ in messages]
+
+        # Add data to the messages subcollection
+        messages_collection.insert(
+            documents=documents,
+            metadatas=metadatas,
+            ids=ids
+        )
+
+        logger.info(f"Saved {len(messages)} messages to the database in collection {conversationId}/messages.")
+        return f"Saved {len(messages)} messages to the database in collection {conversationId}/messages."
+
+    except Exception as e:
+        logger.error(f"Failed to save messages to the database: {e}")
+        return f"Failed to save messages to the database: {e}"

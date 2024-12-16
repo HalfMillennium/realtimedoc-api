@@ -49,15 +49,18 @@ async def create_convo(file: UploadFile, userId: str):
 
     return initialize_embedding_response
 
-@app.get("/get-emmbeddings")
+
+@app.post("/new-message/{conversationId}")
+async def new_message(conversationId: str, body: dict):
+    queryText = body.get("queryText")
+    datasetName = body.get("datasetName")
+    new_message_response = await get_new_message(query_text=queryText, conversation_id=conversationId, selected_dataset_name=datasetName)
+    return new_message_response
+
+@app.get("/get-embeddings")
 async def get_embeddings():
     embeddings = get_embeddings_from_db()
     return embeddings
-
-@app.post("/new-message/{conversationId}")
-async def new_message(conversationId: str, userQuery: str, selectedDatasetName: Optional[str] = None):
-    new_message_response = await get_new_message(query_text=userQuery, conversation_id=conversationId, selected_dataset_name=selectedDatasetName)
-    return new_message_response
 
 @app.get("/clear-chroma-db")
 async def create_convo():
