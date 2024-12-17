@@ -1,17 +1,22 @@
 from io import BytesIO
+import logging
 from fastapi import FastAPI, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from langchain.schema import Document
-from logic.chroma_database_logic.messages_db import get_new_message, initialize_embedding, clear_all_embeddings, get_embeddings_from_db
+from logic.chroma_database_logic.messages_db import get_new_message, initialize_embedding, clear_all_embeddings, get_embeddings_from_db, initialize_conversation_messages
 import PyPDF2
 
 class Item(BaseModel):
     name: str
     price: float
     is_offer: Optional[bool] = None
+app = FastAPI()
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 app = FastAPI()
 
 # Add CORS middleware
@@ -44,10 +49,12 @@ async def create_convo(file: UploadFile, userId: str):
         page_content=page_content,
         metadata={"filename": file.filename, "content_type": file.content_type}
     )
+    init_embedding_response = initialize_embedding(document, userId, file.filename)
+    if init_embedding_response:
+        logger.info(f"Embedding initialized for user {userId} with conversation ID {init_embedding_response.conversationId}")
+        return initialize_conversation_messages(userId, init_embedding_response.conversationId)
 
-    initialize_embedding_response = initialize_embedding(document, userId, file.filename)
-
-    return initialize_embedding_response
+    return {"message": f"Could not create new embedding. Result: {init_embedding_response}"}
 
 
 @app.post("/new-message/{conversationId}")

@@ -107,7 +107,7 @@ def get_dataset_context(selected_dataset_name: str, query_text: str) -> str:
         return f"'{selected_dataset_name}' is not a recognized dataset."
     return None
 
-def initialize_conversation_messages(userId: str, conversationId: str):
+def initialize_conversation_messages(conversationId: str):
     default_message = ChatMessage(
         author="RealTimeDoc AI",
         content=DEFAULT_BOT_MESSAGE,
