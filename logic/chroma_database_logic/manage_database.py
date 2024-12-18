@@ -47,12 +47,6 @@ def split_text(documents: list[Document]) -> list[Document]:
     )
     chunks = text_splitter.split_documents(documents)
     logger.info(f"Split {len(documents)} documents into {len(chunks)} chunks.")
-
-    if chunks:
-        document = chunks[0]
-        logger.info('chunk[0] page_content', document.page_content)
-        logger.info('chunk[0] metadata', document.metadata)
-
     return chunks
 
 def get_embeddings_from_db():
@@ -114,9 +108,7 @@ def save_embedding_to_db(chunks: list[Document], conversationId: str) -> str:
         client = chromadb.PersistentClient(path=CHROMA_PATH)
 
         # Create parent + child collection
-        conversation_collection = client.create_collection(name=conversationId)
-        
-        embeddings_collection = conversation_collection.create_collection('embeddings')
+        embeddings_collection = client.create_collection(name=f"{conversationId}_embeddings")
 
         # Prepare data for insertion
         documents = [chunk.page_content for chunk in unique_chunks]
@@ -124,7 +116,7 @@ def save_embedding_to_db(chunks: list[Document], conversationId: str) -> str:
         ids = [str(uuid.uuid4()) for _ in unique_chunks]
 
         # Add data to the collection
-        embeddings_collection.insert(
+        embeddings_collection.add(
             documents=documents,
             metadatas=metadatas,
             ids=ids,
@@ -135,11 +127,11 @@ def save_embedding_to_db(chunks: list[Document], conversationId: str) -> str:
         existing_hashes.update(new_hashes)
         save_hashes(existing_hashes)
 
-        logger.info(f"Saved {len(unique_chunks)} embeddings to the database in (parent) collection {conversationId}.")
-        return f"Saved {len(unique_chunks)} embeddings to the database in (parent) collection {conversationId}."
+        logger.info(f"Saved {len(unique_chunks)} embeddings to the database in collection {conversationId}_embeddings.")
+        return f"Saved {len(unique_chunks)} embeddings to the database in collection {conversationId}_embeddings."
     except Exception as e:
-        logger.error(f"Failed to save embeddings to the database: {e}")
-        return f"Failed to save embeddings to the database: {e}"
+        logger.error(f"Failed to save embeddings to the database: {e}, attempted {conversationId}")
+        return f"Failed to save embeddings to the database: {e}, attempted {conversationId}"
     
 def compute_hash(content: str) -> str:
     return hashlib.md5(content.encode('utf-8')).hexdigest()
@@ -171,10 +163,11 @@ def clear_hashes():
     return False
 
 class ChatMessage:
-    def __init__(self, content: str, author: str, timestamp: str):
+    def __init__(self, content: str, author: str, timestamp: str, metadata: dict):
         self.content = content
         self.author = author
         self.timestamp = timestamp
+        self.metadata = metadata
 
 def save_messages_to_db(conversationId: str, messages: list[ChatMessage]):
     try:
@@ -182,28 +175,22 @@ def save_messages_to_db(conversationId: str, messages: list[ChatMessage]):
         client = chromadb.PersistentClient(path=CHROMA_PATH)
 
         # Load conversation
-        conversation_collection = client.get_collection(name=conversationId)
-
-        # Create or load the messages subcollection
-        try:
-            messages_collection = conversation_collection.get_collection('messages')
-        except Exception:
-            messages_collection = conversation_collection.create_collection('messages')
+        messages_collection = client.create_collection(name=f"{conversationId}_messages")
 
         # Prepare data for insertion
         documents = [message.content for message in messages]
-        metadatas = [message.metadata for message in messages]
+        metadatas = [message.metadata if message.metadata else {"placeholder": "value"} for message in messages]
         ids = [str(uuid.uuid4()) for _ in messages]
 
         # Add data to the messages subcollection
-        messages_collection.insert(
+        messages_collection.add(
             documents=documents,
             metadatas=metadatas,
             ids=ids
         )
 
-        logger.info(f"Saved {len(messages)} messages to the database in collection {conversationId}/messages.")
-        return f"Saved {len(messages)} messages to the database in collection {conversationId}/messages."
+        logger.info(f"Saved {len(messages)} messages to the database in collection {conversationId}_messages.")
+        return f"Saved {len(messages)} messages to the database in collection {conversationId}_messages."
 
     except Exception as e:
         logger.error(f"Failed to save messages to the database: {e}")

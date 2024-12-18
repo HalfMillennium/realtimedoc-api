@@ -59,10 +59,9 @@ def get_new_message(query_text, conversation_id, selected_dataset_name=None) -> 
     client = chromadb.PersistentClient(path=CHROMA_PATH)
     warning = ""
     # Load the existing collection
-    conversation_collection = client.get_collection(name=conversation_id)
-    embeddings_collection = conversation_collection.get_subcgetollection(name="embeddings")
-    if(embeddings_collection is None or conversation_collection.id is None):
-        return MessageDBResponse(message="Collection not found.", conversationId=conversation_id, conversationTitle="", warning="Collection not found.")
+    embeddings_collection = client.get_collection(name=f"{conversation_id}_embeddings")
+    if(embeddings_collection is None):
+        return MessageDBResponse(message="Embeddings collection not found.", conversationId=conversation_id, conversationTitle="", warning="Embeddings collection not found.")
     query_embedding = embed_text(query_text)
     results = embeddings_collection.query(
         query_embeddings=[query_embedding],
@@ -77,16 +76,15 @@ def get_new_message(query_text, conversation_id, selected_dataset_name=None) -> 
 
     metadatas = results["metadatas"][0]
     documents = results["documents"][0]
-
+    context_text = "{}".format('\n---\n'.join(documents))
     # Get context from dataset, if one is selected
     if selected_dataset_name is not None:
         dataset_context = get_dataset_context(selected_dataset_name, query_text)
-        context_text = "{}".format('\n---\n'.join(documents))
         if dataset_context != None and dataset_context != "":
             context_text = f"{context_text}\n\n---\n\n{'DATASET CONTEXT: ' + dataset_context if dataset_context is not None else '[]'}"
 
     # TODO: Get context from the conversation history
-    conversation_history = conversation_collection.get_subcollection(name="messages")
+    conversation_history = client.get_collection(name=f"{conversation_id}_messages")
 
     prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
     prompt = prompt_template.format(context=context_text, question=query_text, conversation_history=conversation_history)
@@ -107,11 +105,12 @@ def get_dataset_context(selected_dataset_name: str, query_text: str) -> str:
         return f"'{selected_dataset_name}' is not a recognized dataset."
     return None
 
-def initialize_conversation_messages(conversationId: str):
+def initialize_conversation_messages(userId: str, conversationId: str):
     default_message = ChatMessage(
         author="RealTimeDoc AI",
         content=DEFAULT_BOT_MESSAGE,
-        timestamp=datetime.now().strftime("%m/%d/%Y, %I:%M:%S %p")
+        timestamp=datetime.datetime.now().strftime("%m/%d/%Y, %I:%M:%S %p"),
+        metadata={}
     )
     result = save_messages_to_db(conversationId, [default_message])
     logger.info(result)

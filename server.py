@@ -52,7 +52,8 @@ async def create_convo(file: UploadFile, userId: str):
     init_embedding_response = initialize_embedding(document, userId, file.filename)
     if init_embedding_response:
         logger.info(f"Embedding initialized for user {userId} with conversation ID {init_embedding_response.conversationId}")
-        return initialize_conversation_messages(userId, init_embedding_response.conversationId)
+        initialize_conversation_messages(userId, init_embedding_response.conversationId)
+        return init_embedding_response
 
     return {"message": f"Could not create new embedding. Result: {init_embedding_response}"}
 
@@ -61,7 +62,7 @@ async def create_convo(file: UploadFile, userId: str):
 async def new_message(conversationId: str, body: dict):
     queryText = body.get("queryText")
     datasetName = body.get("datasetName")
-    new_message_response = await get_new_message(query_text=queryText, conversation_id=conversationId, selected_dataset_name=datasetName)
+    new_message_response = get_new_message(query_text=queryText, conversation_id=conversationId, selected_dataset_name=datasetName)
     return new_message_response
 
 @app.get("/get-embeddings")
