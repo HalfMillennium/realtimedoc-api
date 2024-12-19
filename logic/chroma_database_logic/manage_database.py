@@ -83,24 +83,8 @@ def get_embeddings_from_db():
 
 
 def save_embedding_to_db(chunks: list[Document], conversationId: str) -> str:
-    # Load existing hashes
-    existing_hashes = load_hashes()
-    new_hashes = set()
 
-    # Filter out duplicate chunks
-    unique_chunks = []
-    for chunk in chunks:
-        chunk_hash = compute_hash(chunk.page_content)
-        if chunk_hash not in existing_hashes:
-            unique_chunks.append(chunk)
-            new_hashes.add(chunk_hash)
-
-    if not unique_chunks:
-        logger.info("No new unique chunks to add.")
-        return
-
-    # Create embeddings for the unique chunks
-    embeddings = [embed_text(chunk.page_content) for chunk in unique_chunks]
+    embeddings = [embed_text(chunk.page_content) for chunk in chunks]
 
     # Save the embeddings and metadata to the local database
     try:
@@ -111,9 +95,9 @@ def save_embedding_to_db(chunks: list[Document], conversationId: str) -> str:
         embeddings_collection = client.create_collection(name=f"{conversationId}_embeddings")
 
         # Prepare data for insertion
-        documents = [chunk.page_content for chunk in unique_chunks]
-        metadatas = [chunk.metadata for chunk in unique_chunks]
-        ids = [str(uuid.uuid4()) for _ in unique_chunks]
+        documents = [chunk.page_content for chunk in chunks]
+        metadatas = [chunk.metadata for chunk in chunks]
+        ids = [str(uuid.uuid4()) for _ in chunks]
 
         # Add data to the collection
         embeddings_collection.add(
@@ -123,43 +107,18 @@ def save_embedding_to_db(chunks: list[Document], conversationId: str) -> str:
             embeddings=embeddings,
         )
 
-        # Update the hashes file
-        existing_hashes.update(new_hashes)
-        save_hashes(existing_hashes)
-
-        logger.info(f"Saved {len(unique_chunks)} embeddings to the database in collection {conversationId}_embeddings.")
-        return f"Saved {len(unique_chunks)} embeddings to the database in collection {conversationId}_embeddings."
+        logger.info(f"Saved {len(chunks)} embeddings to the database in collection {conversationId}_embeddings.")
+        return f"Saved {len(chunks)} embeddings to the database in collection {conversationId}_embeddings."
     except Exception as e:
         logger.error(f"Failed to save embeddings to the database: {e}, attempted {conversationId}")
         return f"Failed to save embeddings to the database: {e}, attempted {conversationId}"
     
-def compute_hash(content: str) -> str:
-    return hashlib.md5(content.encode('utf-8')).hexdigest()
-
-def load_hashes() -> set:
-    if os.path.exists(HASHES_FILE):
-        with open(HASHES_FILE, 'r') as hashes_file:
-            return set(json.load(hashes_file))
-    return set()
-
-def save_hashes(hashes: set):
-    with open(HASHES_FILE, 'w') as hashes_file:
-        json.dump(list(hashes), hashes_file)
-
 def clear_embeddings():
     if os.path.exists(CHROMA_PATH):
         shutil.rmtree(CHROMA_PATH)
         logger.info(f"Cleared the database at {CHROMA_PATH}.")
         return True
     logger.info(f"Could not find database at {CHROMA_PATH}.")
-    return False
-
-def clear_hashes():
-    if os.path.exists(HASHES_FILE):
-        os.remove(HASHES_FILE)
-        logger.info(f"Cleared the hashes file at {HASHES_FILE}.")
-        return True
-    logger.info(f"Could not find hashes at {HASHES_FILE}.")
     return False
 
 class ChatMessage:

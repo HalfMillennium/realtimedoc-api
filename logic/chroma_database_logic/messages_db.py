@@ -9,7 +9,7 @@ import os
 import uuid
 from ..utils import CHROMA_PATH, embed_text
 from langchain.schema import Document
-from .manage_database import generate_data_store, get_embeddings_from_db, clear_embeddings, clear_hashes, save_messages_to_db, ChatMessage
+from .manage_database import generate_data_store, get_embeddings_from_db, clear_embeddings, save_messages_to_db, ChatMessage
 from typing import List, Dict
 from ..dataset_tools.financial_news.get_market_news import query_market
 import datetime
@@ -94,8 +94,15 @@ def get_new_message(query_text, conversation_id, selected_dataset_name=None) -> 
     response_text = model.invoke(prompt)
 
     sources = [metadata.get("source", None) for metadata in metadatas]
-
-    return { "message": response_text, "collectionId": conversation_id, "warning": warning, "context_used": context_text, "sources": set(sources) }
+    # Create and return the ConversationResponse object
+    return MessageDBResponse(
+        message=response_text.content,
+        conversationId=conversation_id,
+        conversationTitle="",
+        allMessages=[],
+        warning=warning,
+        metadata={"context_text": context_text, "sources": set(sources)}
+    )
 
 def get_dataset_context(selected_dataset_name: str, query_text: str) -> str:
     if selected_dataset_name is not None:
@@ -142,5 +149,4 @@ def get_all_embeddings() -> Dict:
 
 def clear_all_embeddings():
     clear_db_result = clear_embeddings()
-    clear_hashes_result = clear_hashes()
-    return clear_db_result and clear_hashes_result
+    return clear_db_result
