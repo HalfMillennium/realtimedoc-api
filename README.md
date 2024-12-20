@@ -83,7 +83,7 @@ The API exposes endpoints for:
 Contributing
 ------------
 
-We welcome contributions! To contribute:
+Contributions are welcome! To contribute:
 
 1.  Fork the repository.
 2.  Create a new branch: `git checkout -b feature-name`.
