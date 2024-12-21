@@ -46,8 +46,8 @@ Getting Started
 
 1.  **Clone the repository:**
     
-        git clone https://github.com/HalfMillennium/realtimedoca-api.git
-        cd realtimedoca-api
+        git clone https://github.com/HalfMillennium/realtimedoc-api.git
+        cd realtimedoc-api
                     
     
 2.  **Create a virtual environment:**
