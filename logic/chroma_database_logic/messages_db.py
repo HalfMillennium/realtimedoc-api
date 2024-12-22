@@ -55,54 +55,61 @@ Answer the question based on the above context: {question}
 DEFAULT_BOT_MESSAGE = "Hi there! I've gone through your document and know it like the back of my hand. Go ahead — ask me anything!"
 
 def get_new_message(query_text, conversation_id, selected_dataset_name=None) -> MessageDBResponse:
-    # Initialize the persistent client
-    client = chromadb.PersistentClient(path=CHROMA_PATH)
-    warning = ""
-    # Load the existing collection
-    embeddings_collection = client.get_collection(name=f"{conversation_id}_embeddings")
-    if(embeddings_collection is None):
-        return MessageDBResponse(message="Embeddings collection not found.", conversationId=conversation_id, conversationTitle="", warning="Embeddings collection not found.")
-    query_embedding = embed_text(query_text)
-    results = embeddings_collection.query(
-        query_embeddings=[query_embedding],
-        n_results=10,
-        include=["documents", "metadatas", "distances"]
-    )
+    try:
+        # Initialize the persistent client
+        client = chromadb.PersistentClient(path=CHROMA_PATH)
+        warning = ""
+        # Load the existing collection
+        embeddings_collection = client.get_collection(name=f"{conversation_id}_embeddings")
+        if(embeddings_collection is None):
+            return MessageDBResponse(message="Embeddings collection not found.", conversationId=conversation_id, conversationTitle="", warning="Embeddings collection not found.")
+        query_embedding = embed_text(query_text)
+        results = embeddings_collection.query(
+            query_embeddings=[query_embedding],
+            n_results=10,
+            include=["documents", "metadatas", "distances"]
+        )
 
-    if len(results) == 0:
-        warning = "Unable to find matching results in uploaded document."
+        if len(results) == 0:
+            warning = "Unable to find matching results in uploaded document."
 
-    print('results:', results)
+        metadatas = results["metadatas"][0]
+        documents = results["documents"][0]
+        context_text = "{}".format('\n---\n'.join(documents))
+        # Get context from dataset, if one is selected
+        if selected_dataset_name is not None:
+            dataset_context = get_dataset_context(selected_dataset_name, query_text)
+            if dataset_context != None and dataset_context != "":
+                context_text = f"{context_text}\n\n---\n\n{'DATASET CONTEXT: ' + dataset_context if dataset_context is not None else '[]'}"
 
-    metadatas = results["metadatas"][0]
-    documents = results["documents"][0]
-    context_text = "{}".format('\n---\n'.join(documents))
-    # Get context from dataset, if one is selected
-    if selected_dataset_name is not None:
-        dataset_context = get_dataset_context(selected_dataset_name, query_text)
-        if dataset_context != None and dataset_context != "":
-            context_text = f"{context_text}\n\n---\n\n{'DATASET CONTEXT: ' + dataset_context if dataset_context is not None else '[]'}"
+        # TODO: Get context from the conversation history
+        conversation_history = client.get_collection(name=f"{conversation_id}_messages")
 
-    # TODO: Get context from the conversation history
-    conversation_history = client.get_collection(name=f"{conversation_id}_messages")
+        prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
+        prompt = prompt_template.format(context=context_text, question=query_text, conversation_history=conversation_history)
+        print(prompt)
 
-    prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
-    prompt = prompt_template.format(context=context_text, question=query_text, conversation_history=conversation_history)
-    print(prompt)
+        model = ChatOpenAI()
+        response_text = model.invoke(prompt)
 
-    model = ChatOpenAI()
-    response_text = model.invoke(prompt)
-
-    sources = [metadata.get("source", None) for metadata in metadatas]
-    # Create and return the ConversationResponse object
-    return MessageDBResponse(
-        message=response_text.content,
-        conversationId=conversation_id,
-        conversationTitle="",
-        allMessages=[],
-        warning=warning,
-        metadata={"context_text": context_text, "sources": set(sources)}
-    )
+        sources = [metadata.get("source", None) for metadata in metadatas]
+        # Create and return the ConversationResponse object
+        return MessageDBResponse(
+            message=response_text.content,
+            conversationId=conversation_id,
+            conversationTitle="",
+            allMessages=[],
+            warning=warning,
+            metadata={"context_text": context_text, "sources": set(sources)}
+        )
+    except Exception as e: 
+        return MessageDBResponse(
+            message="",
+            conversationId="",
+            conversationTitle="",
+            warning=f"Failed to get new chat message: {e}",
+            metadata={}
+        )
 
 def get_dataset_context(selected_dataset_name: str, query_text: str) -> str:
     if selected_dataset_name is not None:
