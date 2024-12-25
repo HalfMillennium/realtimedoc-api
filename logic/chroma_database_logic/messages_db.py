@@ -9,7 +9,7 @@ import os
 import uuid
 from ..utils import CHROMA_PATH, embed_text
 from langchain.schema import Document
-from .manage_database import generate_data_store, get_embeddings_from_db, clear_embeddings, save_messages_to_db, ChatMessage
+from .manage_database import generate_data_store, get_embeddings_from_db, clear_embeddings, save_messages_to_db, save_conversation_to_user, ChatMessage
 from typing import List, Dict
 from ..dataset_tools.financial_news.get_market_news import query_market
 import datetime
@@ -82,7 +82,7 @@ def get_new_message(query_text, conversation_id, selected_dataset_name=None) -> 
             if dataset_context != None and dataset_context != "":
                 context_text = f"{context_text}\n\n---\n\n{'DATASET CONTEXT: ' + dataset_context if dataset_context is not None else '[]'}"
 
-        # TODO: Get context from the conversation history
+        # Get context from the conversation history
         conversation_history = client.get_collection(name=f"{conversation_id}_messages")
 
         prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
@@ -130,11 +130,12 @@ def initialize_conversation_messages(userId: str, conversationId: str):
     logger.info(result)
     return result
 
-def initialize_embedding(document: Document, userId: str, fileName: str) -> MessageDBResponse:
+def initialize_embedding(userId: str, document: Document, fileName: str) -> MessageDBResponse:
     warning = ""
     collectionId = str(uuid.uuid4())
-
-    # TODO: Save collectionId to sqlite/postgres database to associate userIds with collections/conversations
+    save_conversation_response = save_conversation_to_user(collectionId, userId)
+    if(save_conversation_response is None or save_conversation_response['success'] == False):
+        return { "error": f"Could not save conversation to user. Result: {save_conversation_response}", "message": save_conversation_response['message'], "daily_limit_remaining": save_conversation_response['daily_limit_remaining'] }
     data_store_generation_response = generate_data_store(collectionId, document, "*.pdf")
     if data_store_generation_response is None:
         warning = "No message from the data store generation."
@@ -147,7 +148,7 @@ def initialize_embedding(document: Document, userId: str, fileName: str) -> Mess
         allMessages=[],
         warning=warning,
         data_store_generation_response=data_store_generation_response,
-        metadata={"file_name": fileName, "content_type": document.metadata.get("content_type", None)}
+        metadata={"file_name": fileName, "content_type": document.metadata.get("content_type", None), "daily_limit_remaining": save_conversation_response['daily_limit_remaining']}
     )
 
 def get_all_embeddings() -> Dict:

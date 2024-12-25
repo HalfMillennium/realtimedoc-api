@@ -8,10 +8,6 @@ from langchain.schema import Document
 from logic.chroma_database_logic.messages_db import get_new_message, initialize_embedding, clear_all_embeddings, get_embeddings_from_db, initialize_conversation_messages
 import PyPDF2
 
-class Item(BaseModel):
-    name: str
-    price: float
-    is_offer: Optional[bool] = None
 app = FastAPI()
 
 # Configure logging
@@ -22,6 +18,8 @@ app = FastAPI()
 # Add CORS middleware
 origins = [
     "http://localhost:5173",
+    "http://localhost:5050",
+    "http://localhost:5000",
 ]
 
 app.add_middleware(
@@ -49,14 +47,14 @@ async def create_convo(file: UploadFile, userId: str):
         page_content=page_content,
         metadata={"filename": file.filename, "content_type": file.content_type}
     )
-    init_embedding_response = initialize_embedding(document, userId, file.filename)
+    init_embedding_response = initialize_embedding(userId, document, file.filename)
     if init_embedding_response:
         logger.info(f"Embedding initialized for user {userId} with conversation ID {init_embedding_response.conversationId}")
         initialize_conversation_messages(userId, init_embedding_response.conversationId)
+        # save the conversation Id to userId in database
         return init_embedding_response
 
     return {"message": f"Could not create new embedding. Result: {init_embedding_response}"}
-
 
 @app.post("/new-message/{conversationId}")
 async def new_message(conversationId: str, body: dict):

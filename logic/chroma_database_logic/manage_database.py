@@ -1,8 +1,4 @@
-import hashlib
-import json
-from botocore.exceptions import NoCredentialsError
 import chromadb
-from chromadb import Settings
 from langchain_community.document_loaders import DirectoryLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
@@ -12,7 +8,9 @@ import os
 import shutil
 import logging
 import uuid
-from ..utils import CHROMA_PATH, HASHES_FILE, embed_text
+from ..utils import CHROMA_PATH, embed_text
+from datetime import datetime
+import pytz  # For consistent timezone handling
 
 # Load environment variables. Assumes that project contains .env file with API keys
 load_dotenv()
@@ -154,3 +152,61 @@ def save_messages_to_db(conversationId: str, messages: list[ChatMessage]):
     except Exception as e:
         logger.error(f"Failed to save messages to the database: {e}")
         return f"Failed to save messages to the database: {e}"
+    
+def save_conversation_to_user(conversationId: str, userId: str) -> dict:
+    try:
+        client = chromadb.PersistentClient(path=CHROMA_PATH)
+        user_collection = client.get_or_create_collection(name=f"{userId}_conversations")
+        
+        # Get current date in UTC
+        current_date = datetime.now(pytz.UTC).date().isoformat()
+        
+        # Get existing conversations
+        result = user_collection.get()
+        metadatas = result.get("metadatas", [])
+        
+        # Count today's uploads and find last upload date
+        todays_uploads = 0
+        last_upload_date = None
+        total_uploads = len(metadatas)
+        
+        if metadatas:
+            last_upload_date = metadatas[-1].get("upload_date")
+            # Count uploads for today
+            todays_uploads = sum(1 for meta in metadatas 
+                               if meta.get("upload_date") == current_date)
+        
+        # Check upload limits
+        if todays_uploads >= 10 and last_upload_date == current_date:
+            logger.warning(f"User {userId} has reached daily upload limit of 10")
+            return {
+                "success": False,
+                "message": "Daily upload limit reached. Please try again tomorrow.",
+                "daily_limit_remaining": "None"
+            }
+        
+        # If we're here, we can proceed with the upload
+        user_collection.add(
+            documents=[conversationId],
+            metadatas=[{
+                "conversationId": conversationId,
+                "upload_date": current_date,
+                "daily_upload_number": todays_uploads + 1,
+                "total_upload_number": total_uploads + 1
+            }],
+            ids=[str(uuid.uuid4())]
+        )
+        
+        logger.info(f"Saved conversation {conversationId} to user {userId}. Upload #{todays_uploads + 1} for today.")
+        return {
+            "success": True,
+            "message": f"Saved conversation. Upload #{todays_uploads + 1} for today.",
+            "daily_limit_remaining": 10 - (todays_uploads + 1)
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to save conversation to user: {e}")
+        return {
+            "success": False,
+            "message": f"Failed to save conversation: {e}"
+        }

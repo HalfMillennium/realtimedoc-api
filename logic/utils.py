@@ -3,7 +3,6 @@ from transformers import AutoTokenizer, AutoModel
 
 CHROMA_PATH = "chroma"
 CONSUMER_DATA = "../data/consumers"
-HASHES_FILE = "hashes.json"
 # Load HuggingFace model and tokenizer
 model_name = "sentence-transformers/all-MiniLM-L6-v2"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
