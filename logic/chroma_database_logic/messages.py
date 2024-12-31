@@ -9,23 +9,11 @@ import os
 import uuid
 from ..utils import CHROMA_PATH, embed_text
 from langchain.schema import Document
-from .manage_database import generate_data_store, get_embeddings_from_db, clear_embeddings, save_messages_to_db, save_conversation_to_user, ChatMessage
-from typing import List, Dict
+from .manage_database import generate_data_store, clear_embeddings, save_messages_to_db, save_conversation_to_user
 from ..dataset_tools.financial_news.get_market_news import query_market
+from .types import MessageDBResponse, MarketQueryResult
 import datetime
 import logging
-
-class MessageDBResponse:
-    def __init__(self, message: str, conversationId: str, conversationTitle: str, warning: str, allMessages: List[str] = None, data_store_generation_response: str = None, context_used: str = None, sources: set = None, metadata: dict = None):
-        self.message = message
-        self.conversationId = conversationId
-        self.conversationTitle = conversationTitle
-        self.allMessages = allMessages
-        self.warning = warning
-        self.context_used = context_used
-        self.sources = sources
-        self.data_store_generation_response = data_store_generation_response
-        self.metadata = metadata
 
 # Load environment variables. Assumes that project contains .env file with API keys
 load_dotenv()
@@ -65,7 +53,7 @@ def get_new_message(query_text, conversation_id, selected_dataset_name=None) -> 
             return MessageDBResponse(message="Embeddings collection not found.", conversationId=conversation_id, conversationTitle="", warning="Embeddings collection not found.")
         query_embedding = embed_text(query_text)
         results = embeddings_collection.query(
-            query_embeddings=[query_embedding],
+            query_embeddings=[query_embedding], # type: ignore
             n_results=10,
             include=["documents", "metadatas", "distances"]
         )
@@ -73,35 +61,38 @@ def get_new_message(query_text, conversation_id, selected_dataset_name=None) -> 
         if len(results) == 0:
             warning = "Unable to find matching results in uploaded document."
 
-        metadatas = results["metadatas"][0]
-        documents = results["documents"][0]
+        metadatas = results["metadatas"][0] if results["metadatas"] is not None else []
+        documents = results["documents"][0] if results["documents"] is not None else []
         context_text = "{}".format('\n---\n'.join(documents))
         # Get context from dataset, if one is selected
         if selected_dataset_name is not None:
             dataset_context = get_dataset_context(selected_dataset_name, query_text)
             if dataset_context != None and dataset_context != "":
-                context_text = f"{context_text}\n\n---\n\n{'DATASET CONTEXT: ' + dataset_context if dataset_context is not None else '[]'}"
+                context_text = f"{context_text}\n\n---\n\n{'DATASET CONTEXT: {dataset_context}' if dataset_context is not None else '[]'}"
 
         # Get context from the conversation history
         conversation_history = client.get_collection(name=f"{conversation_id}_messages")
+        all_conversation_messages = conversation_history.get(include=["documents"])
 
         prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
-        prompt = prompt_template.format(context=context_text, question=query_text, conversation_history=conversation_history)
+        prompt = prompt_template.format(context=context_text, question=query_text, conversation_history=all_conversation_messages.items)
         print(prompt)
 
         model = ChatOpenAI()
         response_text = model.invoke(prompt)
 
         sources = [metadata.get("source", None) for metadata in metadatas]
-        # Create and return the ConversationResponse object
-        return MessageDBResponse(
-            message=response_text.content,
+
+        new_message = MessageDBResponse(
+            message=str(response_text.content),
             conversationId=conversation_id,
             conversationTitle="",
             allMessages=[],
             warning=warning,
-            metadata={"context_text": context_text, "sources": set(sources)}
+            metadata={"context_text": context_text, "sources": list(set(sources))}
         )
+        all_conversation_messages.update(documents=[new_message.as_json_string()])
+        return new_message
     except Exception as e: 
         return MessageDBResponse(
             message="",
@@ -111,18 +102,18 @@ def get_new_message(query_text, conversation_id, selected_dataset_name=None) -> 
             metadata={}
         )
 
-def get_dataset_context(selected_dataset_name: str, query_text: str) -> str:
+def get_dataset_context(selected_dataset_name: str, query_text: str) -> str|None:
     if selected_dataset_name is not None:
         # TODO: Add rest of datasets
         if(selected_dataset_name == "financial_news"):
-            return query_market(query_text)
+            result = query_market(query_text)
         return f"'{selected_dataset_name}' is not a recognized dataset."
     return None
 
 def initialize_conversation_messages(userId: str, conversationId: str):
-    default_message = ChatMessage(
+    default_message = MessageDBResponse(
         author="RealTimeDoc AI",
-        content=DEFAULT_BOT_MESSAGE,
+        message=DEFAULT_BOT_MESSAGE,
         timestamp=datetime.datetime.now().strftime("%m/%d/%Y, %I:%M:%S %p"),
         metadata={}
     )
@@ -135,7 +126,14 @@ def initialize_embedding(userId: str, document: Document, fileName: str) -> Mess
     collectionId = str(uuid.uuid4())
     save_conversation_response = save_conversation_to_user(collectionId, userId)
     if(save_conversation_response is None or save_conversation_response['success'] == False):
-        return { "error": f"Could not save conversation to user. Result: {save_conversation_response}", "message": save_conversation_response['message'], "daily_limit_remaining": save_conversation_response['daily_limit_remaining'] }
+        return MessageDBResponse(
+            message=f"Could not save conversation to user. Result: {save_conversation_response}",
+            conversationId="",
+            conversationTitle="",
+            warning="",
+            metadata={}
+        )
+
     data_store_generation_response = generate_data_store(collectionId, document, "*.pdf")
     if data_store_generation_response is None:
         warning = "No message from the data store generation."
@@ -150,10 +148,6 @@ def initialize_embedding(userId: str, document: Document, fileName: str) -> Mess
         data_store_generation_response=data_store_generation_response,
         metadata={"file_name": fileName, "content_type": document.metadata.get("content_type", None), "daily_limit_remaining": save_conversation_response['daily_limit_remaining']}
     )
-
-def get_all_embeddings() -> Dict:
-    embeddings = get_embeddings_from_db()
-    return embeddings
 
 def clear_all_embeddings():
     clear_db_result = clear_embeddings()

@@ -2,7 +2,9 @@ import torch
 from transformers import AutoTokenizer, AutoModel
 
 CHROMA_PATH = "chroma"
-CONSUMER_DATA = "../data/consumers"
+CONSUMER_SPENDING_DATA = "../data/spending/us_consumers_october"
+NATIONAL_SPENDING_DATA = "../data/spending/us_national_november"
+
 # Load HuggingFace model and tokenizer
 model_name = "sentence-transformers/all-MiniLM-L6-v2"
 tokenizer = AutoTokenizer.from_pretrained(model_name)

@@ -5,7 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from langchain.schema import Document
-from logic.chroma_database_logic.messages_db import get_new_message, initialize_embedding, clear_all_embeddings, get_embeddings_from_db, initialize_conversation_messages
+from logic.chroma_database_logic.messages import get_new_message, initialize_embedding, clear_all_embeddings, initialize_conversation_messages
+from logic.chroma_database_logic.manage_database import get_user_conversations
 import PyPDF2
 
 app = FastAPI()
@@ -31,7 +32,7 @@ app.add_middleware(
 )
 
 @app.post("/create-convo/{userId}")
-async def create_convo(file: UploadFile, userId: str):
+async def create_conversation(file: UploadFile, userId: str):
     # Read the file contents
     content = await file.read()
 
@@ -47,26 +48,25 @@ async def create_convo(file: UploadFile, userId: str):
         page_content=page_content,
         metadata={"filename": file.filename, "content_type": file.content_type}
     )
-    init_embedding_response = initialize_embedding(userId, document, file.filename)
+    init_embedding_response = initialize_embedding(userId, document, file.filename or "")
     if init_embedding_response:
         logger.info(f"Embedding initialized for user {userId} with conversation ID {init_embedding_response.conversationId}")
         initialize_conversation_messages(userId, init_embedding_response.conversationId)
-        # save the conversation Id to userId in database
-        return init_embedding_response
+        return init_embedding_response.as_json_string()
 
     return {"message": f"Could not create new embedding. Result: {init_embedding_response}"}
+
+@app.get('/conversations/{userId}')
+async def get_conversations(userId: str):
+    user_conversations = get_user_conversations(userId)
+    return user_conversations
 
 @app.post("/new-message/{conversationId}")
 async def new_message(conversationId: str, body: dict):
     queryText = body.get("queryText")
     datasetName = body.get("datasetName")
     new_message_response = get_new_message(query_text=queryText, conversation_id=conversationId, selected_dataset_name=datasetName)
-    return new_message_response
-
-@app.get("/get-embeddings")
-async def get_embeddings():
-    embeddings = get_embeddings_from_db()
-    return embeddings
+    return new_message_response.as_json_string()
 
 @app.get("/clear-chroma-db")
 async def create_convo():
