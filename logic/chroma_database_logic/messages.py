@@ -14,6 +14,7 @@ from ..dataset_tools.financial_news.get_market_news import query_market
 from .types import MessageDBResponse, MarketQueryResult
 import datetime
 import logging
+from ..dataset_tools.DataSetService import DataSetService 
 
 # Load environment variables. Assumes that project contains .env file with API keys
 load_dotenv()
@@ -38,11 +39,13 @@ Also consider the conversation history: {conversation_history}, and make this re
 ---
 
 Answer the question based on the above context: {question}
+
+Use the content as context, but don't explicity refer to it as context in responses, it should be a natural part of the conversation.
 """
 
 DEFAULT_BOT_MESSAGE = "Hi there! I've gone through your document and know it like the back of my hand. Go ahead — ask me anything!"
 
-def get_new_message(query_text, conversation_id, selected_dataset_name=None) -> MessageDBResponse:
+def get_new_message(query_text, conversation_id, selected_dataset_id: str|None=None) -> MessageDBResponse:
     try:
         # Initialize the persistent client
         client = chromadb.PersistentClient(path=CHROMA_PATH)
@@ -65,34 +68,48 @@ def get_new_message(query_text, conversation_id, selected_dataset_name=None) -> 
         documents = results["documents"][0] if results["documents"] is not None else []
         context_text = "{}".format('\n---\n'.join(documents))
         # Get context from dataset, if one is selected
-        if selected_dataset_name is not None:
-            dataset_context = get_dataset_context(selected_dataset_name, query_text)
+        if selected_dataset_id != None:
+            dataset_context = get_dataset_context(selected_dataset_id, query_text)
             if dataset_context != None and dataset_context != "":
                 context_text = f"{context_text}\n\n---\n\n{'DATASET CONTEXT: {dataset_context}' if dataset_context is not None else '[]'}"
-
+        else:
+            logger.info("No dataset selected.")
         # Get context from the conversation history
         conversation_history = client.get_collection(name=f"{conversation_id}_messages")
         all_conversation_messages = conversation_history.get(include=["documents"])
+        existing_documents = all_conversation_messages.get('documents', []) or []
 
         prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
-        prompt = prompt_template.format(context=context_text, question=query_text, conversation_history=all_conversation_messages.items)
-        print(prompt)
+        prompt = prompt_template.format(context=context_text, question=query_text, conversation_history=all_conversation_messages.items())
+        print(f'PROMPT: {prompt}')
 
         model = ChatOpenAI()
         response_text = model.invoke(prompt)
 
         sources = [metadata.get("source", None) for metadata in metadatas]
 
-        new_message = MessageDBResponse(
+        new_bot_message = MessageDBResponse(
             message=str(response_text.content),
+            author="RealTimeDoc AI",
+            conversationId=conversation_id,
+            conversationTitle=""
+        )
+
+        new_user_message = MessageDBResponse(
+            message=query_text,
+            author="User",
             conversationId=conversation_id,
             conversationTitle="",
             allMessages=[],
             warning=warning,
-            metadata={"context_text": context_text, "sources": list(set(sources))}
+            metadata={"context_text": context_text, "sources": list(set(sources)), "selected_dataset_id": selected_dataset_id}
         )
-        all_conversation_messages.update(documents=[new_message.as_json_string()])
-        return new_message
+
+        existing_documents.append(new_user_message.as_json_string())
+        existing_documents.append(new_bot_message.as_json_string())
+
+        all_conversation_messages.update(documents=existing_documents)
+        return new_bot_message
     except Exception as e: 
         return MessageDBResponse(
             message="",
@@ -102,12 +119,21 @@ def get_new_message(query_text, conversation_id, selected_dataset_name=None) -> 
             metadata={}
         )
 
-def get_dataset_context(selected_dataset_name: str, query_text: str) -> str|None:
-    if selected_dataset_name is not None:
-        # TODO: Add rest of datasets
-        if(selected_dataset_name == "financial_news"):
-            result = query_market(query_text)
-        return f"'{selected_dataset_name}' is not a recognized dataset."
+def get_dataset_context(selected_dataset_id: str, query_text: str) -> str|None:
+    if selected_dataset_id is not None:
+        dataset_service = DataSetService()
+        result = None
+        if selected_dataset_id == "financial_news":
+            result = dataset_service.get_financial_news(query_text)
+        elif selected_dataset_id == "us_consumer_spending":
+            dataset_service.initialize_spending_db()
+            result = dataset_service.get_spending_context(query_text, dataset_id='us_consumer_spending')
+        elif selected_dataset_id == "us_national_spending":
+            result = dataset_service.get_spending_context(query_text, dataset_id='us_national_spending')
+        else:
+            logger.error(f"'{selected_dataset_id}' is not a recognized dataset.")
+            return None
+        return '\n\n'.join(result)
     return None
 
 def initialize_conversation_messages(userId: str, conversationId: str):

@@ -61,11 +61,12 @@ async def get_conversations(userId: str):
     user_conversations = get_user_conversations(userId)
     return user_conversations
 
-@app.post("/new-message/{conversationId}")
-async def new_message(conversationId: str, body: dict):
-    queryText = body.get("queryText")
-    datasetName = body.get("datasetName")
-    new_message_response = get_new_message(query_text=queryText, conversation_id=conversationId, selected_dataset_name=datasetName)
+@app.post("/new-message/{conversation_id}")
+async def new_message(conversation_id: str, body: dict):
+    query_text = body.get("queryText")
+    dataset_id = body.get("dataSetId")
+    logger.info(f"Request body {body}")
+    new_message_response = get_new_message(query_text=query_text, conversation_id=conversation_id, selected_dataset_id=dataset_id)
     return new_message_response.as_json_string()
 
 @app.get("/clear-chroma-db")
