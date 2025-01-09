@@ -108,7 +108,8 @@ class PostgresDatabase:
         data = self.cur.fetchall()
         conversations = []
         for convo in data:
-            messages = self.cur.execute(f'SELECT * FROM messages WHERE conversation_id={convo[2]}')
+            self.cur.execute(f'SELECT * FROM messages WHERE conversation_id={convo[2]}')
+            messages = self.cur.fetchall()
             conversations.append({ 'id': convo[0], 'user_id': convo[1], 'conversation_id': convo[2], 'title': convo[3], 'messages': messages})
         return conversations
     
