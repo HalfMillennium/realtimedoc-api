@@ -16,6 +16,9 @@ class PostgresDatabase:
         self.cur.close()
         self.conn.close()
 
+    def commit(self):
+        self.conn.commit()
+
     def create_tables(self):
         self.cur.execute("""
             CREATE TABLE IF NOT EXISTS conversations (
@@ -43,6 +46,7 @@ class PostgresDatabase:
         """)
         self.conn.commit()
 
+
     def insert_conversation(self, conversation_data):
         self.cur.execute("""
             INSERT INTO conversations (id, user_id, conversation_id, title)
@@ -53,6 +57,10 @@ class PostgresDatabase:
             conversation_data['conversation_id'],
             conversation_data['title']
         ))
+        self.conn.commit()
+    
+    def delete_conversation(self, conversation_id):
+        self.cur.execute(f'DELETE FROM conversations WHERE conversation_id={conversation_id}')
         self.conn.commit()
 
     def insert_message(self, message_data):
@@ -98,9 +106,6 @@ class PostgresDatabase:
             message_data['sources'],
             message_data['metadata']
         ))
-        self.conn.commit()
-
-    def commit(self):
         self.conn.commit()
 
     def get_user_conversations(self, user_id):
