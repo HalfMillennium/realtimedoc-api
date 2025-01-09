@@ -9,12 +9,13 @@ import os
 import uuid
 from ..utils import CHROMA_PATH, embed_text
 from langchain.schema import Document
-from .manage_database import generate_data_store, clear_embeddings, save_messages_to_db, save_conversation_to_user
+from .manage_chroma import generate_data_store, clear_embeddings, save_messages_to_db, save_conversation_to_user
 from ..dataset_tools.financial_news.get_market_news import query_market
 from .types import MessageDBResponse, MarketQueryResult
 import datetime
 import logging
-from ..dataset_tools.DataSetService import DataSetService 
+import psycopg2
+from ..dataset_tools.dataset_service import DataSetService 
 
 # Load environment variables. Assumes that project contains .env file with API keys
 load_dotenv()

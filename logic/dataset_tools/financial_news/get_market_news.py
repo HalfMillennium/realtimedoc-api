@@ -3,7 +3,7 @@ from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 from langchain.prompts import ChatPromptTemplate
 from datetime import datetime, timedelta
-from ...chroma_database_logic.types import MarketQueryResult
+from ...database_logic.types import MarketQueryResult
 from typing import List
 import openai
 import os

@@ -5,8 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from langchain.schema import Document
-from logic.chroma_database_logic.messages import get_new_message, initialize_embedding, clear_all_embeddings, initialize_conversation_messages
-from logic.chroma_database_logic.manage_database import get_user_conversations
+from logic.database_logic.messages import get_new_message, initialize_embedding, clear_all_embeddings, initialize_conversation_messages
+from logic.database_logic.manage_chroma import get_user_conversations
 import PyPDF2
 
 app = FastAPI()

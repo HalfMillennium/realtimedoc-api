@@ -1,6 +1,6 @@
 from ..utils import CONSUMER_SPENDING_DATA, NATIONAL_SPENDING_DATA, CHROMA_PATH, embed_text
 import chromadb
-from ..chroma_database_logic.manage_database import generate_data_store
+from ..database_logic.manage_chroma import generate_data_store
 from typing import List
 import logging
 from .financial_news.get_market_news import query_market
