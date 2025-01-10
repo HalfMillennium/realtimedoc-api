@@ -65,8 +65,9 @@ async def get_conversations(userId: str):
 async def new_message(conversation_id: str, body: dict):
     query_text = body.get("queryText")
     dataset_id = body.get("dataSetId")
+    user_id = body.get("userId")
     logger.info(f"Request body {body}")
-    new_message_response = get_new_message(query_text=query_text, conversation_id=conversation_id, selected_dataset_id=dataset_id)
+    new_message_response = get_new_message(query_text=query_text, user_id=user_id, conversation_id=conversation_id, selected_dataset_id=dataset_id)
     return new_message_response.as_json_string()
 
 @app.get("/clear-chroma-db")

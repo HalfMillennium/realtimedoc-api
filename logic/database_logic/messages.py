@@ -16,6 +16,7 @@ import datetime
 import logging
 import psycopg2
 from ..dataset_tools.dataset_service import DataSetService 
+from .postgres.main import PostgresDatabase
 
 # Load environment variables. Assumes that project contains .env file with API keys
 load_dotenv()
@@ -46,7 +47,7 @@ Use the content as context, but don't explicity refer to it as context in respon
 
 DEFAULT_BOT_MESSAGE = "Hi there! I've gone through your document and know it like the back of my hand. Go ahead — ask me anything!"
 
-def get_new_message(query_text, conversation_id, selected_dataset_id: str|None=None) -> MessageDBResponse:
+def get_new_message(query_text, user_id, conversation_id, selected_dataset_id: str|None=None) -> MessageDBResponse:
     try:
         # Initialize the persistent client
         client = chromadb.PersistentClient(path=CHROMA_PATH)
@@ -76,12 +77,11 @@ def get_new_message(query_text, conversation_id, selected_dataset_id: str|None=N
         else:
             logger.info("No dataset selected.")
         # Get context from the conversation history
-        conversation_history = client.get_collection(name=f"{conversation_id}_messages")
-        all_conversation_messages = conversation_history.get(include=["documents"])
-        existing_documents = all_conversation_messages.get('documents', []) or []
+        db = PostgresDatabase(host='localhost', port=5432)
+        existing_documents = db.get_user_conversations(user_id)
 
         prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
-        prompt = prompt_template.format(context=context_text, question=query_text, conversation_history=all_conversation_messages.items())
+        prompt = prompt_template.format(context=context_text, question=query_text, conversation_history=existing_documents)
         print(f'PROMPT: {prompt}')
 
         model = ChatOpenAI()
@@ -108,8 +108,7 @@ def get_new_message(query_text, conversation_id, selected_dataset_id: str|None=N
 
         existing_documents.append(new_user_message.as_json_string())
         existing_documents.append(new_bot_message.as_json_string())
-
-        all_conversation_messages.update(documents=existing_documents)
+        db.insert_conversation(conversation_data=existing_documents)
         return new_bot_message
     except Exception as e: 
         return MessageDBResponse(
