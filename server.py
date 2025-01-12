@@ -1,22 +1,27 @@
 from io import BytesIO
+import logging
 from fastapi import FastAPI, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from langchain.schema import Document
-from logic.chroma_database_logic.messages_db import get_new_message, initialize_embedding, clear_all_embeddings, get_embeddings_from_db
+from logic.database_logic.messages import new_chat_message, get_user_conversations, init_conversation
+from logic.database_logic.manage_chroma import initialize_embedding, clear_all_embeddings
+from logic.database_logic.types import Conversation
 import PyPDF2
 
-class Item(BaseModel):
-    name: str
-    price: float
-    is_offer: Optional[bool] = None
+app = FastAPI()
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 app = FastAPI()
 
 # Add CORS middleware
 origins = [
     "http://localhost:5173",
+    "http://localhost:5050",
+    "http://localhost:5000",
 ]
 
 app.add_middleware(
@@ -28,7 +33,7 @@ app.add_middleware(
 )
 
 @app.post("/create-convo/{userId}")
-async def create_convo(file: UploadFile, userId: str):
+async def create_conversation(file: UploadFile, userId: str):
     # Read the file contents
     content = await file.read()
 
@@ -44,20 +49,27 @@ async def create_convo(file: UploadFile, userId: str):
         page_content=page_content,
         metadata={"filename": file.filename, "content_type": file.content_type}
     )
+    create_convo_response = init_conversation(userId, document)
+    if isinstance(create_convo_response, Conversation):
+        logger.info(f"[/create-convo] Conversation created for user {userId} with conversation ID {create_convo_response.id}")
+        #initialize_conversation_messages(userId, init_embedding_response.conversationId)
+        return create_convo_response.messages[0].as_json_string()
 
-    initialize_embedding_response = initialize_embedding(document, userId, file.filename)
+    return {"message": f"Could not create new conversation. Result: {create_convo_response}"}
 
-    return initialize_embedding_response
+@app.get('/conversations/{userId}')
+async def get_conversations(userId: str):
+    user_conversations = get_user_conversations(userId)
+    return user_conversations
 
-@app.get("/get-emmbeddings")
-async def get_embeddings():
-    embeddings = get_embeddings_from_db()
-    return embeddings
-
-@app.post("/new-message/{conversationId}")
-async def new_message(conversationId: str, userQuery: str, selectedDatasetName: Optional[str] = None):
-    new_message_response = await get_new_message(query_text=userQuery, conversation_id=conversationId, selected_dataset_name=selectedDatasetName)
-    return new_message_response
+@app.post("/new-message/{conversation_id}")
+async def new_message(conversation_id: str, body: dict):
+    query_text = body.get("queryText")
+    dataset_id = body.get("dataSetId")
+    user_id = body.get("userId")
+    logger.info(f"Request body {body}")
+    new_message_response = new_chat_message(query_text=query_text, user_id=user_id, conversation_id=conversation_id, selected_dataset_id=dataset_id)
+    return new_message_response.as_json_string()
 
 @app.get("/clear-chroma-db")
 async def create_convo():
