@@ -1,16 +1,18 @@
 import psycopg2
+from ..types import Conversation, MessageDBResponse
+from typing import List
+import json
 
 class PostgresDatabase:
     def __init__(self, host, port):
         self.conn = psycopg2.connect(
             dbname='realtimedoc',
             user='postgres',
-            password='postie',
+            password='admin',
             host=host,
             port=port
         )
         self.cur = self.conn.cursor()
-        self.create_tables()
 
     def close(self):
         self.cur.close()
@@ -21,70 +23,61 @@ class PostgresDatabase:
 
     def create_tables(self):
         self.cur.execute("""
-            CREATE TABLE IF NOT EXISTS conversations (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL,
-                conversation_id INTEGER NOT NULL,
+            CREATE TABLE conversations (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
                 title TEXT NOT NULL
             )
         """)
         self.cur.execute("""
-            CREATE TABLE IF NOT EXISTS messages (
-                id SERIAL PRIMARY KEY,
-                message TEXT NOT NULL,
-                author TEXT NOT NULL,
-                user_id INTEGER NOT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                conversation_id INTEGER NOT NULL,
+            CREATE TABLE messages (
+                id TEXT PRIMARY KEY,
+                message TEXT,
+                user_id TEXT,
+                user_name TEXT,
+                timestamp TEXT,
+                conversation_id TEXT,
                 warning TEXT,
-                all_messages TEXT,
                 data_store_generation_response TEXT,
                 context_used TEXT,
-                sources TEXT,
-                metadata TEXT
+                sources JSON,
+                metadata JSONB
             )
         """)
         self.conn.commit()
 
-
-    def insert_conversation(self, conversation_data):
+    def insert_conversation(self, conversation_data, user_id):
         self.cur.execute("""
-            INSERT INTO conversations (id, user_id, conversation_id, title)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO conversations (id, user_id, title)
+            VALUES (%s, %s, %s)
         """, (
-            conversation_data['id'],
-            conversation_data['user_id'],
-            conversation_data['conversation_id'],
-            conversation_data['title']
+            conversation_data.id,
+            user_id,
+            conversation_data.title
         ))
         self.conn.commit()
     
     def delete_conversation(self, conversation_id):
-        self.cur.execute(f'DELETE FROM conversations WHERE conversation_id={conversation_id}')
+        self.cur.execute(f"DELETE FROM conversations WHERE id='{conversation_id}'")
         self.conn.commit()
 
     def insert_message(self, message_data):
         """
         Inserts a message into the messages table.
-
-        Parameters:
-        message_data (dict): A dictionary containing the message details.
-            - message (str): The message content.
-            - author (str): The author of the message.
-            - user_id (int): The ID of the user who sent the message.
-            - conversation_id (int): The ID of the conversation the message belongs to.
-            - warning (str, optional): Any warning related to the message.
-            - all_messages (str, optional): All messages in the conversation.
-            - data_store_generation_response (str, optional): Data store generation response.
-            - context_used (str, optional): Context used in the message.
-            - sources (list, optional): Sources related to the message.
-            - metadata (dict, optional): Additional metadata for the message.
         """
+        # Convert message_data from string to dict if it's not already
+        if isinstance(message_data, str):
+            message_data = json.loads(message_data)
+
+        metadata_json = json.dumps(message_data.metadata) if message_data.metadata else None
+        
+        # Clean and prepare other fields
         self.cur.execute("""
             INSERT INTO messages (
+                id,
                 message, 
-                author,
                 user_id,
+                user_name,
                 timestamp, 
                 conversation_id, 
                 warning,
@@ -93,27 +86,86 @@ class PostgresDatabase:
                 sources, 
                 metadata
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
-            message_data['message'],
-            message_data['author'],
-            message_data['user_id'],
-            message_data['timestamp'],
-            message_data['conversation_id'],
-            message_data['warning'],
-            message_data['data_store_generation_response'],
-            message_data['context_used'],
-            message_data['sources'],
-            message_data['metadata']
+            message_data.id,
+            message_data.message,
+            message_data.user_id,
+            message_data.user_name,
+            message_data.timestamp,
+            message_data.conversationId,
+            message_data.warning,
+            message_data.data_store_generation_response,
+            message_data.context_used,
+            json.dumps(message_data.sources),
+            metadata_json
         ))
         self.conn.commit()
 
-    def get_user_conversations(self, user_id):
-        self.cur.execute(f'SELECT * FROM conversations WHERE user_id={user_id}')
+    def get_user_conversations(self, user_id) -> List[Conversation]:
+        self.cur.execute(f"SELECT * FROM conversations WHERE user_id='{user_id}'")
         data = self.cur.fetchall()
         conversations = []
+        
         for convo in data:
-            self.cur.execute(f'SELECT * FROM messages WHERE conversation_id={convo[2]}')
+            self.cur.execute(f"SELECT * FROM messages WHERE conversation_id='{convo[0]}'")
             messages = self.cur.fetchall()
-            conversations.append({ 'id': convo[0], 'user_id': convo[1], 'conversation_id': convo[2], 'title': convo[3], 'messages': messages})
+            message_objects = [MessageDBResponse(*message) for message in messages]
+            conversations.append({ 
+                'id': convo[0], 
+                'user_id': convo[1], 
+                'conversation_id': convo[2], 
+                'title': convo[3], 
+                'messages': message_objects
+            })
         return conversations
+    
+    def get_conversation(self, conversation_id) -> Conversation|None:
+        self.cur.execute(f"SELECT * FROM conversations WHERE id='{conversation_id}'")
+        data = self.cur.fetchall()
+        conversation_objects = [Conversation(*convo) for convo in data]
+        conversation = conversation_objects[0] if len(conversation_objects) > 0 else None
+        self.cur.execute(f"SELECT * FROM messages WHERE conversation_id='{conversation_id}'")
+        messages = self.cur.fetchall()
+        message_objects = [MessageDBResponse(*message) for message in messages]
+        if conversation is not None:
+            return Conversation(
+                id=conversation_id,
+                title=conversation.title,
+                messages=message_objects
+            )
+        return None
+    
+if __name__ == '__main__':
+    db = PostgresDatabase(host='localhost', port=5432)
+    db.create_tables()
+
+    example_conversation_id = 1
+    example_user_id = 1
+    conversation_data_1 = {
+        'id': 1,
+        'conversation_id': example_conversation_id,
+        'title': 'Sample Conversation 3'
+    }
+
+    db.insert_conversation(conversation_data_1, example_user_id)
+
+    all_conversations = db.get_user_conversations(user_id=1)
+    message_data_1 = {
+        'id': '1',
+        'message': 'Hello, how are you?',
+        'user_id': example_user_id,
+        'user_name': 'User1',
+        'timestamp': None,
+        'conversation_id': example_conversation_id,
+        'warning': None,
+        'data_store_generation_response': None,
+        'context_used': None,
+        'sources': None,
+        'metadata': None
+    }
+
+    db.insert_message(message_data_1)
+
+    all_conversations = db.get_user_conversations(user_id=1)
+    print('All conversations:', str(all_conversations))

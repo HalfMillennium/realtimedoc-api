@@ -5,8 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from langchain.schema import Document
-from logic.database_logic.messages import get_new_message, initialize_embedding, clear_all_embeddings, initialize_conversation_messages
-from logic.database_logic.manage_chroma import get_user_conversations
+from logic.database_logic.messages import new_chat_message, get_user_conversations, init_conversation
+from logic.database_logic.manage_chroma import initialize_embedding, clear_all_embeddings
+from logic.database_logic.types import Conversation
 import PyPDF2
 
 app = FastAPI()
@@ -48,13 +49,13 @@ async def create_conversation(file: UploadFile, userId: str):
         page_content=page_content,
         metadata={"filename": file.filename, "content_type": file.content_type}
     )
-    init_embedding_response = initialize_embedding(userId, document, file.filename or "")
-    if init_embedding_response:
-        logger.info(f"Embedding initialized for user {userId} with conversation ID {init_embedding_response.conversationId}")
-        initialize_conversation_messages(userId, init_embedding_response.conversationId)
-        return init_embedding_response.as_json_string()
+    create_convo_response = init_conversation(userId, document)
+    if isinstance(create_convo_response, Conversation):
+        logger.info(f"[/create-convo] Conversation created for user {userId} with conversation ID {create_convo_response.id}")
+        #initialize_conversation_messages(userId, init_embedding_response.conversationId)
+        return create_convo_response.messages[0].as_json_string()
 
-    return {"message": f"Could not create new embedding. Result: {init_embedding_response}"}
+    return {"message": f"Could not create new conversation. Result: {create_convo_response}"}
 
 @app.get('/conversations/{userId}')
 async def get_conversations(userId: str):
@@ -67,7 +68,7 @@ async def new_message(conversation_id: str, body: dict):
     dataset_id = body.get("dataSetId")
     user_id = body.get("userId")
     logger.info(f"Request body {body}")
-    new_message_response = get_new_message(query_text=query_text, user_id=user_id, conversation_id=conversation_id, selected_dataset_id=dataset_id)
+    new_message_response = new_chat_message(query_text=query_text, user_id=user_id, conversation_id=conversation_id, selected_dataset_id=dataset_id)
     return new_message_response.as_json_string()
 
 @app.get("/clear-chroma-db")
