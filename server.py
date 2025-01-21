@@ -8,6 +8,7 @@ from langchain.schema import Document
 from logic.database_logic.messages import new_chat_message, get_user_conversations, init_conversation
 from logic.database_logic.manage_chroma import initialize_embedding, clear_all_embeddings
 from logic.database_logic.types import Conversation
+import uvicorn
 import PyPDF2
 
 app = FastAPI()
@@ -57,9 +58,10 @@ async def create_conversation(file: UploadFile, userId: str):
 
     return {"message": f"Could not create new conversation. Result: {create_convo_response}"}
 
-@app.get('/conversations/{userId}')
-async def get_conversations(userId: str):
-    user_conversations = get_user_conversations(userId)
+@app.post('/conversations')
+async def get_conversations(body: dict):
+    user_id = body.get("userId")
+    user_conversations = get_user_conversations(user_id)
     return user_conversations
 
 @app.post("/new-message/{conversation_id}")
@@ -77,3 +79,6 @@ async def create_convo():
     if(result):
         return {"message": "Database cleared successfully."}
     return {"message": "Database could not be cleared."}
+
+if __name__ == '__main__':
+    uvicorn.run(app, port=8000, host='0.0.0.0')

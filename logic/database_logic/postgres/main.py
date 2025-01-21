@@ -1,7 +1,10 @@
 import psycopg2
-from ..types import Conversation, MessageDBResponse
+from ..types import Conversation, MessageDBResponse, QuotaResponse
 from typing import List
+from datetime import datetime
+import pytz
 import json
+import logging
 
 class PostgresDatabase:
     def __init__(self, host, port):
@@ -13,6 +16,9 @@ class PostgresDatabase:
             port=port
         )
         self.cur = self.conn.cursor()
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger(__name__)
+        self.logger.info("Database connection initialized")
 
     def close(self):
         self.cur.close()
@@ -58,7 +64,7 @@ class PostgresDatabase:
         self.conn.commit()
     
     def delete_conversation(self, conversation_id):
-        self.cur.execute(f"DELETE FROM conversations WHERE id='{conversation_id}'")
+        self.cur.execute("DELETE FROM conversations WHERE id=%s", (conversation_id,))
         self.conn.commit()
 
     def insert_message(self, message_data):
@@ -93,7 +99,7 @@ class PostgresDatabase:
             message_data.user_id,
             message_data.user_name,
             message_data.timestamp,
-            message_data.conversationId,
+            message_data.conversation_id,
             message_data.warning,
             message_data.data_store_generation_response,
             message_data.context_used,
@@ -103,38 +109,100 @@ class PostgresDatabase:
         self.conn.commit()
 
     def get_user_conversations(self, user_id) -> List[Conversation]:
-        self.cur.execute(f"SELECT * FROM conversations WHERE user_id='{user_id}'")
+        self.cur.execute("SELECT * FROM conversations WHERE user_id=%s", (user_id,))
         data = self.cur.fetchall()
         conversations = []
-        
+
         for convo in data:
             self.cur.execute(f"SELECT * FROM messages WHERE conversation_id='{convo[0]}'")
             messages = self.cur.fetchall()
-            message_objects = [MessageDBResponse(*message) for message in messages]
+            #self.logger.info('messages', messages)
             conversations.append({ 
                 'id': convo[0], 
                 'user_id': convo[1], 
-                'conversation_id': convo[2], 
-                'title': convo[3], 
-                'messages': message_objects
+                'title': convo[2], 
+                'messages': messages
             })
         return conversations
     
     def get_conversation(self, conversation_id) -> Conversation|None:
-        self.cur.execute(f"SELECT * FROM conversations WHERE id='{conversation_id}'")
+        # Get conversation data
+        self.cur.execute("SELECT * FROM conversations WHERE id=%s", (conversation_id,))
         data = self.cur.fetchall()
-        conversation_objects = [Conversation(*convo) for convo in data]
-        conversation = conversation_objects[0] if len(conversation_objects) > 0 else None
-        self.cur.execute(f"SELECT * FROM messages WHERE conversation_id='{conversation_id}'")
+        
+        if not data:
+            return None
+            
+        # Get messages
+        self.cur.execute("SELECT * FROM messages WHERE conversation_id=%s", (conversation_id,))
         messages = self.cur.fetchall()
         message_objects = [MessageDBResponse(*message) for message in messages]
-        if conversation is not None:
-            return Conversation(
-                id=conversation_id,
-                title=conversation.title,
-                messages=message_objects
-            )
-        return None
+        
+        conversation_data = data[0]
+        return Conversation(
+            id=conversation_data[0],
+            user_id=conversation_data[1],
+            title=conversation_data[2],
+            messages=message_objects
+        )
+    
+    def update_quota(self, user_id, last_date, current_count, total_count) -> QuotaResponse:
+        self.cur.execute(
+            """
+            UPDATE quotas
+            SET last_date=%s, current_count=%s, total_count=%s
+            WHERE user_id=%s
+            """,
+            (last_date, current_count, total_count, user_id)
+        )
+        self.conn.commit()
+        return QuotaResponse(user_id=user_id, remaining=(10-current_count), message="")
+
+    def set_user_conversation(self, user_id) -> QuotaResponse:
+        # Use native datetime in database instead of formatted string
+        self.cur.execute("SELECT * FROM quotas WHERE user_id=%s", (user_id,))
+        data = self.cur.fetchall()
+        
+        current_time = datetime.now(pytz.utc)
+        
+        if not data:
+            self.cur.execute("""
+                INSERT INTO quotas (
+                    user_id,
+                    last_date,
+                    current_count,
+                    total_count
+                )
+                VALUES (%s, %s, %s, %s)
+            """, (
+                user_id,
+                current_time,
+                1,
+                1
+            ))
+            return QuotaResponse(user_id=user_id, remaining=9, message="")
+
+        quota_item = data[0]
+        total_count = quota_item[3]
+        current_count = quota_item[2]
+        last_date = quota_item[1]
+
+        # Reset count if it's a new day
+        if last_date.date() < current_time.date():
+            current_count = 0
+            
+        if current_count >= 10:
+            return QuotaResponse(user_id=user_id, remaining=0, message="User has maxed out their daily quota.")
+            
+        # Update with incremented counts
+        new_current_count = current_count + 1
+        return self.update_quota(
+            user_id=user_id,
+            last_date=current_time,
+            current_count=new_current_count,
+            total_count=total_count + 1
+        )
+
     
 if __name__ == '__main__':
     db = PostgresDatabase(host='localhost', port=5432)
