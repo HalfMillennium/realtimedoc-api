@@ -111,19 +111,8 @@ def get_dataset_context(selected_dataset_id: str, query_text: str) -> str|None:
 
 def initialize_embedding(userId: str, document: Document, fileName: str) -> MessageDBResponse:
     warning = ""
-    collectionId = str(uuid.uuid4())
-    '''
-    save_conversation_response = save_conversation_to_user(collectionId, userId)
-    if(save_conversation_response is None or save_conversation_response['success'] == False):
-        return MessageDBResponse(
-            message=f"Could not save conversation to user. Result: {save_conversation_response}",
-            conversationId="",
-            conversationTitle="",
-            warning="",
-            metadata={}
-        )
-    '''
-    data_store_generation_response = generate_data_store(collectionId, document, "*.pdf")
+    collection_id = str(uuid.uuid4())
+    data_store_generation_response = generate_data_store(collection_id, document, "*.pdf")
     if data_store_generation_response is None:
         warning = "No message from the data store generation."
 
@@ -132,10 +121,10 @@ def initialize_embedding(userId: str, document: Document, fileName: str) -> Mess
         id=str(uuid.uuid4()),
         user_name="RealTimeDoc AI",
         message=DEFAULT_BOT_MESSAGE,
-        conversationId=collectionId,
-        conversationTitle=fileName,
+        conversation_id=collection_id,
+        conversation_title=fileName,
         timestamp=datetime.now(pytz.utc).isoformat(),
-        allMessages=[],
+        all_messages=[],
         warning=warning,
         data_store_generation_response=data_store_generation_response,
         metadata={"file_name": fileName, "content_type": document.metadata.get("content_type", None), "daily_limit_remaining": 10}

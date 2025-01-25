@@ -56,7 +56,7 @@ def new_chat_message(query_text, user_id, conversation_id, selected_dataset_id: 
         # Load the existing embedding
         embeddings_collection = client.get_collection(name=f"{conversation_id}_embeddings")
         if(embeddings_collection is None):
-            return MessageDBResponse(message="Embeddings collection not found.", conversationId=conversation_id, conversationTitle="", warning="Embeddings collection not found.")
+            return MessageDBResponse(message="Embeddings collection not found.", conversation_id=conversation_id, conversation_title="", warning="Embeddings collection not found.")
         query_embedding = embed_text(query_text)
         results = embeddings_collection.query(
             query_embeddings=[query_embedding], # type: ignore
@@ -95,8 +95,8 @@ def new_chat_message(query_text, user_id, conversation_id, selected_dataset_id: 
             message=str(response_text.content),
             user_name="RealTimeDoc AI",
             timestamp=datetime.now(pytz.utc).isoformat(),
-            conversationId=conversation_id,
-            conversationTitle=""
+            conversation_id=conversation_id,
+            conversation_title=""
         )
 
         new_user_message = MessageDBResponse(
@@ -104,9 +104,9 @@ def new_chat_message(query_text, user_id, conversation_id, selected_dataset_id: 
             message=query_text,
             user_name='User',
             timestamp=datetime.now(pytz.utc).isoformat(),
-            conversationId=conversation_id,
-            conversationTitle="",
-            allMessages=[],
+            conversation_id=conversation_id,
+            conversation_title="",
+            all_messages=[],
             warning=warning,
             metadata={"context_text": context_text, "sources": list(set(sources)), "selected_dataset_id": selected_dataset_id}
         )
@@ -119,8 +119,8 @@ def new_chat_message(query_text, user_id, conversation_id, selected_dataset_id: 
     except Exception as e: 
         return MessageDBResponse(
             message="",
-            conversationId="",
-            conversationTitle="",
+            conversation_id="",
+            conversation_title="",
             warning=f"Failed to get new chat message: {e}",
             metadata={}
         )
@@ -132,17 +132,15 @@ def get_user_conversations(user_id) -> List[Conversation]:
 def init_conversation(userId: str, document: Document) -> Conversation|str:
     init_embedding_response = initialize_embedding(userId, document, document.metadata['filename'])
     if init_embedding_response:
-        logger.info(f"[(func) create_conversation] Embedding initialized for user {userId} with conversation ID {init_embedding_response.conversationId}")
+        logger.info(f"[(func) create_conversation] Embedding initialized for user {userId} with conversation ID {init_embedding_response.conversation_id}")
         db = PostgresDatabase(host=POSTGRES_HOST, port=POSTGRES_PORT)
-        #initialize_conversation_messages(userId, init_embedding_response.conversationId)
         conversation = Conversation(
-            id=init_embedding_response.conversationId,
-            title=init_embedding_response.conversationTitle,
+            id=init_embedding_response.conversation_id,
+            title=init_embedding_response.conversation_title,
             messages=[init_embedding_response]
         )
         db.insert_conversation(conversation, user_id=userId)
         db.insert_message(message_data=init_embedding_response)
-        logger.info('Made it to the end of create_conversation')
         return conversation
     else:
         raise Exception(f"Could not create new embedding. Result: {init_embedding_response}")

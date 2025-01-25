@@ -7,14 +7,14 @@ from typing import List, Optional
 
 @dataclass
 class MessageDBResponse:
-    def __init__(self, id: str = '', message: str = '', user_name: str = '', user_id: str = '', timestamp: str = '', conversationId: str = '', conversationTitle: str = '', warning: str = '', allMessages: List[str] = [], data_store_generation_response: str = '', context_used: str = '', sources: List[str] = [], metadata: dict = {}):
+    def __init__(self, id: str = '', message: str = '', user_name: str = '', user_id: str = '', timestamp: str = '', conversation_id: str = '', conversation_title: str = '', warning: str = '', all_messages: List[str] = [], data_store_generation_response: str = '', context_used: str = '', sources: List[str] = [], metadata: dict = {}):
         self.id = id
         self.message = message
         self.user_name = user_name
         self.user_id = user_id
-        self.conversationId = conversationId
-        self.conversationTitle = conversationTitle
-        self.allMessages = allMessages
+        self.conversation_id = conversation_id
+        self.conversation_title = conversation_title
+        self.all_messages = all_messages
         self.warning = warning
         self.timestamp = timestamp
         self.context_used = context_used
@@ -33,10 +33,10 @@ class MessageDBResponse:
             user_name=data.get('user_name', ''),
             user_id=data.get('user_id', ''),
             timestamp=data.get('timestamp', ''),
-            conversationId=data.get('conversationId', ''),
-            conversationTitle=data.get('conversationTitle', ''),
+            conversation_id=data.get('conversation_id', ''),
+            conversation_title=data.get('conversation_title', ''),
             warning=data.get('warning', ''),
-            allMessages=data.get('allMessages', []),
+            all_messages=data.get('all_messages', []),
             data_store_generation_response=data.get('data_store_generation_response', ''),
             context_used=data.get('context_used', ''),
             sources=data.get('sources', []),

@@ -2,6 +2,7 @@ import psycopg2
 from ..types import Conversation, MessageDBResponse
 from typing import List
 import json
+import logging
 
 class PostgresDatabase:
     def __init__(self, host, port):
@@ -13,6 +14,8 @@ class PostgresDatabase:
             port=port
         )
         self.cur = self.conn.cursor()
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger(__name__)
 
     def close(self):
         self.cur.close()
@@ -93,7 +96,7 @@ class PostgresDatabase:
             message_data.user_id,
             message_data.user_name,
             message_data.timestamp,
-            message_data.conversationId,
+            message_data.conversation_id,
             message_data.warning,
             message_data.data_store_generation_response,
             message_data.context_used,
@@ -108,33 +111,44 @@ class PostgresDatabase:
         conversations = []
         
         for convo in data:
-            self.cur.execute("SELECT * FROM messages WHERE conversation_id=%s", (convo[2],))
+            self.logger.info(f"Conversation: {convo}")
+            self.cur.execute("SELECT * FROM messages WHERE conversation_id=%s", (convo[0],))
             messages = self.cur.fetchall()
-            message_objects = [MessageDBResponse(*message) for message in messages]
             conversations.append({ 
                 'id': convo[0], 
                 'user_id': convo[1], 
-                'conversation_id': convo[2], 
-                'title': convo[3], 
-                'messages': message_objects
+                'title': convo[2], 
+                'messages': messages
             })
         return conversations
     
-    def get_conversation(self, conversation_id) -> Conversation|None:
-        self.cur.execute("SELECT * FROM conversations WHERE id=%s", (conversation_id,))
-        data = self.cur.fetchall()
-        conversation_objects = [Conversation(*convo) for convo in data]
-        conversation = conversation_objects[0] if len(conversation_objects) > 0 else None
-        self.cur.execute("SELECT * FROM messages WHERE conversation_id=%s", (conversation_id,))
-        messages = self.cur.fetchall()
-        message_objects = [MessageDBResponse(*message) for message in messages]
-        if conversation is not None:
+    def get_conversation(self, conversation_id) -> Conversation | None:
+        try:
+            # Fetch conversation data
+            self.cur.execute("SELECT * FROM conversations WHERE id = %s", (conversation_id,))
+            data = self.cur.fetchall()
+            
+            # Check if conversation exists
+            if not data:
+                return None
+            
+            # Create conversation object
+            conversation = Conversation(*data[0])
+            
+            # Fetch associated messages
+            self.cur.execute("SELECT * FROM messages WHERE conversation_id = %s", (conversation_id,))
+            messages = self.cur.fetchall()
+            
+            # Return a new Conversation object with fetched messages
             return Conversation(
                 id=conversation_id,
                 title=conversation.title,
-                messages=message_objects
+                messages=messages # type: ignore
             )
-        return None
+        except Exception as e:
+            # Optional: Add error logging or handling
+            print(f"Error retrieving conversation: {e}")
+            return None
     
 if __name__ == '__main__':
     db = PostgresDatabase(host='localhost', port=5432)
