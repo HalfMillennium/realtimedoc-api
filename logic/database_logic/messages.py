@@ -9,13 +9,14 @@ import os
 import uuid
 from ..utils import CHROMA_PATH, embed_text
 from langchain.schema import Document
-from .manage_chroma import generate_data_store, clear_embeddings, save_messages_to_db, save_conversation_to_user
 from ..dataset_tools.financial_news.get_market_news import query_market
-from .types import MessageDBResponse, MarketQueryResult
-import datetime
+from .types import MessageDBResponse, Conversation
 import logging
-import psycopg2
-from ..dataset_tools.dataset_service import DataSetService 
+from .postgres.main import PostgresDatabase
+from .manage_chroma import get_dataset_context, initialize_embedding
+from typing import List
+from datetime import datetime
+import pytz
 
 # Load environment variables. Assumes that project contains .env file with API keys
 load_dotenv()
@@ -44,14 +45,15 @@ Answer the question based on the above context: {question}
 Use the content as context, but don't explicity refer to it as context in responses, it should be a natural part of the conversation.
 """
 
-DEFAULT_BOT_MESSAGE = "Hi there! I've gone through your document and know it like the back of my hand. Go ahead — ask me anything!"
+POSTGRES_HOST = 'localhost'
+POSTGRES_PORT = 5432
 
-def get_new_message(query_text, conversation_id, selected_dataset_id: str|None=None) -> MessageDBResponse:
+def new_chat_message(query_text, user_id, conversation_id, selected_dataset_id: str|None=None) -> MessageDBResponse:
     try:
-        # Initialize the persistent client
+        db = PostgresDatabase(host=POSTGRES_HOST, port=POSTGRES_PORT)
         client = chromadb.PersistentClient(path=CHROMA_PATH)
         warning = ""
-        # Load the existing collection
+        # Load the existing embedding
         embeddings_collection = client.get_collection(name=f"{conversation_id}_embeddings")
         if(embeddings_collection is None):
             return MessageDBResponse(message="Embeddings collection not found.", conversationId=conversation_id, conversationTitle="", warning="Embeddings collection not found.")
@@ -76,12 +78,11 @@ def get_new_message(query_text, conversation_id, selected_dataset_id: str|None=N
         else:
             logger.info("No dataset selected.")
         # Get context from the conversation history
-        conversation_history = client.get_collection(name=f"{conversation_id}_messages")
-        all_conversation_messages = conversation_history.get(include=["documents"])
-        existing_documents = all_conversation_messages.get('documents', []) or []
+        conversation = db.get_conversation(conversation_id)
+        existing_messages = conversation.messages if conversation is not None else []
 
         prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
-        prompt = prompt_template.format(context=context_text, question=query_text, conversation_history=all_conversation_messages.items())
+        prompt = prompt_template.format(context=context_text, question=query_text, conversation_history=existing_messages)
         print(f'PROMPT: {prompt}')
 
         model = ChatOpenAI()
@@ -90,26 +91,30 @@ def get_new_message(query_text, conversation_id, selected_dataset_id: str|None=N
         sources = [metadata.get("source", None) for metadata in metadatas]
 
         new_bot_message = MessageDBResponse(
+            id=str(uuid.uuid4()),
             message=str(response_text.content),
-            author="RealTimeDoc AI",
+            user_name="RealTimeDoc AI",
+            timestamp=datetime.now(pytz.utc).isoformat(),
             conversationId=conversation_id,
             conversationTitle=""
         )
 
         new_user_message = MessageDBResponse(
+            id=str(uuid.uuid4()),
             message=query_text,
-            author="User",
+            user_name='User',
+            timestamp=datetime.now(pytz.utc).isoformat(),
             conversationId=conversation_id,
             conversationTitle="",
             allMessages=[],
             warning=warning,
             metadata={"context_text": context_text, "sources": list(set(sources)), "selected_dataset_id": selected_dataset_id}
         )
-
-        existing_documents.append(new_user_message.as_json_string())
-        existing_documents.append(new_bot_message.as_json_string())
-
-        all_conversation_messages.update(documents=existing_documents)
+        try:
+            db.insert_message(message_data=new_user_message)
+            db.insert_message(message_data=new_user_message)
+        except Exception as e:
+            print(f"Error inserting messages: {str(e)}")
         return new_bot_message
     except Exception as e: 
         return MessageDBResponse(
@@ -119,63 +124,25 @@ def get_new_message(query_text, conversation_id, selected_dataset_id: str|None=N
             warning=f"Failed to get new chat message: {e}",
             metadata={}
         )
+    
+def get_user_conversations(user_id) -> List[Conversation]:
+    db = PostgresDatabase(host=POSTGRES_HOST, port=POSTGRES_PORT)
+    return db.get_user_conversations(user_id)
 
-def get_dataset_context(selected_dataset_id: str, query_text: str) -> str|None:
-    if selected_dataset_id is not None:
-        dataset_service = DataSetService()
-        result = None
-        if selected_dataset_id == "financial_news":
-            result = dataset_service.get_financial_news(query_text)
-        elif selected_dataset_id == "us_consumer_spending":
-            dataset_service.initialize_spending_db()
-            result = dataset_service.get_spending_context(query_text, dataset_id='us_consumer_spending')
-        elif selected_dataset_id == "us_national_spending":
-            result = dataset_service.get_spending_context(query_text, dataset_id='us_national_spending')
-        else:
-            logger.error(f"'{selected_dataset_id}' is not a recognized dataset.")
-            return None
-        return '\n\n'.join(result)
-    return None
-
-def initialize_conversation_messages(userId: str, conversationId: str):
-    default_message = MessageDBResponse(
-        author="RealTimeDoc AI",
-        message=DEFAULT_BOT_MESSAGE,
-        timestamp=datetime.datetime.now().strftime("%m/%d/%Y, %I:%M:%S %p"),
-        metadata={}
-    )
-    result = save_messages_to_db(conversationId, [default_message])
-    logger.info(result)
-    return result
-
-def initialize_embedding(userId: str, document: Document, fileName: str) -> MessageDBResponse:
-    warning = ""
-    collectionId = str(uuid.uuid4())
-    save_conversation_response = save_conversation_to_user(collectionId, userId)
-    if(save_conversation_response is None or save_conversation_response['success'] == False):
-        return MessageDBResponse(
-            message=f"Could not save conversation to user. Result: {save_conversation_response}",
-            conversationId="",
-            conversationTitle="",
-            warning="",
-            metadata={}
+def init_conversation(userId: str, document: Document) -> Conversation|str:
+    init_embedding_response = initialize_embedding(userId, document, document.metadata['filename'])
+    if init_embedding_response:
+        logger.info(f"[(func) create_conversation] Embedding initialized for user {userId} with conversation ID {init_embedding_response.conversationId}")
+        db = PostgresDatabase(host=POSTGRES_HOST, port=POSTGRES_PORT)
+        #initialize_conversation_messages(userId, init_embedding_response.conversationId)
+        conversation = Conversation(
+            id=init_embedding_response.conversationId,
+            title=init_embedding_response.conversationTitle,
+            messages=[init_embedding_response]
         )
-
-    data_store_generation_response = generate_data_store(collectionId, document, "*.pdf")
-    if data_store_generation_response is None:
-        warning = "No message from the data store generation."
-
-    # Create and return the ConversationResponse object
-    return MessageDBResponse(
-        message=DEFAULT_BOT_MESSAGE,
-        conversationId=collectionId,
-        conversationTitle=fileName,
-        allMessages=[],
-        warning=warning,
-        data_store_generation_response=data_store_generation_response,
-        metadata={"file_name": fileName, "content_type": document.metadata.get("content_type", None), "daily_limit_remaining": save_conversation_response['daily_limit_remaining']}
-    )
-
-def clear_all_embeddings():
-    clear_db_result = clear_embeddings()
-    return clear_db_result
+        db.insert_conversation(conversation, user_id=userId)
+        db.insert_message(message_data=init_embedding_response)
+        logger.info('Made it to the end of create_conversation')
+        return conversation
+    else:
+        raise Exception(f"Could not create new embedding. Result: {init_embedding_response}")
