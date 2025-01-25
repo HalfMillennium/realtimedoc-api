@@ -103,12 +103,12 @@ class PostgresDatabase:
         self.conn.commit()
 
     def get_user_conversations(self, user_id) -> List[Conversation]:
-        self.cur.execute(f"SELECT * FROM conversations WHERE user_id='{user_id}'")
+        self.cur.execute("SELECT * FROM conversations WHERE user_id=%s", (user_id,))
         data = self.cur.fetchall()
         conversations = []
         
         for convo in data:
-            self.cur.execute(f"SELECT * FROM messages WHERE conversation_id='{convo[0]}'")
+            self.cur.execute("SELECT * FROM messages WHERE conversation_id=%s", (convo[2],))
             messages = self.cur.fetchall()
             message_objects = [MessageDBResponse(*message) for message in messages]
             conversations.append({ 
@@ -121,11 +121,11 @@ class PostgresDatabase:
         return conversations
     
     def get_conversation(self, conversation_id) -> Conversation|None:
-        self.cur.execute(f"SELECT * FROM conversations WHERE id='{conversation_id}'")
+        self.cur.execute("SELECT * FROM conversations WHERE id=%s", (conversation_id,))
         data = self.cur.fetchall()
         conversation_objects = [Conversation(*convo) for convo in data]
         conversation = conversation_objects[0] if len(conversation_objects) > 0 else None
-        self.cur.execute(f"SELECT * FROM messages WHERE conversation_id='{conversation_id}'")
+        self.cur.execute("SELECT * FROM messages WHERE conversation_id=%s", (conversation_id,))
         messages = self.cur.fetchall()
         message_objects = [MessageDBResponse(*message) for message in messages]
         if conversation is not None:
