@@ -12,7 +12,6 @@ from .types import MessageDBResponse, Conversation
 from datetime import datetime
 import pytz  # For timezone handling
 import numpy as np
-from ..dataset_tools.dataset_service import DataSetService 
 from ..database_logic.postgres.main import PostgresDatabase
 
 
@@ -36,6 +35,7 @@ def load_pdf_documents(path, file_type) -> list[Document]:
         documents = loader.load()
         return documents
     except FileNotFoundError as e:
+        logger.info('FILE PATH: ' + os.path.abspath(path))
         logger.error(f"File not found: {e}")
         return []
     except IOError as e:
@@ -93,22 +93,6 @@ def clear_embeddings():
     logger.info(f"Could not find database at {CHROMA_PATH}.")
     return False
 
-def get_dataset_context(selected_dataset_id: str, query_text: str) -> str|None:
-    if selected_dataset_id is not None:
-        dataset_service = DataSetService()
-        result = None
-        if selected_dataset_id == "financial_news":
-            result = dataset_service.get_financial_news(query_text)
-        elif selected_dataset_id == "us_consumer_spending":
-            result = dataset_service.get_spending_context(query_text, dataset_id='us_consumer_spending')
-        elif selected_dataset_id == "us_national_spending":
-            result = dataset_service.get_spending_context(query_text, dataset_id='us_national_spending')
-        else:
-            logger.error(f"'{selected_dataset_id}' is not a recognized dataset.")
-            return None
-        return '\n\n'.join(result)
-    return None
-
 def initialize_embedding(userId: str, document: Document, fileName: str) -> MessageDBResponse:
     warning = ""
     collection_id = str(uuid.uuid4())
@@ -123,7 +107,7 @@ def initialize_embedding(userId: str, document: Document, fileName: str) -> Mess
         message=DEFAULT_BOT_MESSAGE,
         conversation_id=collection_id,
         conversation_title=fileName,
-        timestamp=datetime.now(pytz.utc).isoformat(),
+        timestamp=datetime.now(pytz.utc).strftime("%m/%d/%Y"),
         all_messages=[],
         warning=warning,
         data_store_generation_response=data_store_generation_response,

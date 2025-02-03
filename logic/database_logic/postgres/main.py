@@ -3,6 +3,8 @@ from ..types import Conversation, MessageDBResponse
 from typing import List
 import json
 import logging
+import datetime
+import pytz
 
 class PostgresDatabase:
     def __init__(self, host, port):
@@ -47,6 +49,15 @@ class PostgresDatabase:
                 metadata JSONB
             )
         """)
+        self.cur.execute("""
+            CREATE TABLE quotas (
+                user_id TEXT PRIMARY KEY,
+                admission_date DATE,
+                daily_counter INTEGER,
+                daily_max INTEGER,
+                total_counter INTEGER
+            )
+                        """)
         self.conn.commit()
 
     def insert_conversation(self, conversation_data, user_id):
@@ -58,6 +69,63 @@ class PostgresDatabase:
             user_id,
             conversation_data.title
         ))
+        self.conn.commit()
+
+    def insert_quota(self, user_id, initial_admission_date, daily_counter, daily_max, total_counter):
+        self.logger.info('TIMESTAMP', initial_admission_date)
+        self.cur.execute("""
+            INSERT INTO quotas (
+                user_id,
+                admission_date,
+                daily_counter,
+                daily_max,
+                total_counter
+            ) 
+            VALUES (
+                %s,
+                %s,
+                %s,
+                %s,
+                %s
+            );
+            """, (user_id, initial_admission_date, daily_counter, daily_max, total_counter))
+        self.conn.commit()
+
+    def admit_quota(self, user_id, daily_max):
+        current_datetime = datetime.datetime.now(pytz.utc)
+        # Should be formatted as MM/DD/YYYY
+        formatted_datetime = current_datetime.strftime("%m/%d/%Y")
+        self.cur.execute("""
+                         UPDATE quotas
+                            SET 
+                                daily_counter = daily_counter + 1,
+                                daily_max = %s,
+                                total_counter = total_counter + 1,
+                                admission_date = %s
+                            WHERE user_id = %s;
+            """, (daily_max, formatted_datetime, user_id))
+        self.conn.commit()
+    
+    def get_quota(self, user_id):
+        self.cur.execute("""
+            SELECT * FROM quotas WHERE user_id=%s
+        """, (user_id,))
+        data = self.cur.fetchall()
+        self.logger.info(f"Quota data: {data}")
+        return data[0] if data and len(data) > 0 else None
+    
+    def reset_and_admit_quota(self, user_id, daily_max):
+        current_datetime = datetime.datetime.now(pytz.utc)
+        formatted_datetime = current_datetime.strftime("%m/%d/%Y")
+        self.cur.execute("""
+                         UPDATE quotas
+                            SET 
+                                daily_counter = 1,
+                                daily_max = %s,
+                                total_counter = total_counter + 1,
+                                admission_date = %s
+                            WHERE user_id = %s;
+            """, (daily_max, formatted_datetime, user_id))
         self.conn.commit()
     
     def delete_conversation(self, conversation_id):

@@ -13,7 +13,8 @@ from ..dataset_tools.financial_news.get_market_news import query_market
 from .types import MessageDBResponse, Conversation
 import logging
 from .postgres.main import PostgresDatabase
-from .manage_chroma import get_dataset_context, initialize_embedding
+from .manage_chroma import initialize_embedding
+from ..dataset_tools.dataset_service import DataSetService
 from typing import List
 from datetime import datetime
 import pytz
@@ -34,6 +35,11 @@ Answer the question based on the following context:
 
 {context}
 
+---
+
+External Dataset Context:
+
+{dataset_context}
 ---
 
 Also consider the conversation history: {conversation_history}, and make this response a continuation of that history.
@@ -66,15 +72,14 @@ def new_chat_message(query_text, user_id, conversation_id, selected_dataset_id: 
 
         if len(results) == 0:
             warning = "Unable to find matching results in uploaded document."
-
+        dataset_context = ''
         metadatas = results["metadatas"][0] if results["metadatas"] is not None else []
         documents = results["documents"][0] if results["documents"] is not None else []
         context_text = "{}".format('\n---\n'.join(documents))
         # Get context from dataset, if one is selected
         if selected_dataset_id != None:
             dataset_context = get_dataset_context(selected_dataset_id, query_text)
-            if dataset_context != None and dataset_context != "":
-                context_text = f"{context_text}\n\n---\n\n{'DATASET CONTEXT: {dataset_context}' if dataset_context is not None else '[]'}"
+            logger.info(f"Dataset context: {dataset_context} for dataset {selected_dataset_id}")
         else:
             logger.info("No dataset selected.")
         # Get context from the conversation history
@@ -82,7 +87,7 @@ def new_chat_message(query_text, user_id, conversation_id, selected_dataset_id: 
         existing_messages = conversation.messages if conversation is not None else []
 
         prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
-        prompt = prompt_template.format(context=context_text, question=query_text, conversation_history=existing_messages)
+        prompt = prompt_template.format(context=context_text, question=query_text, conversation_history=existing_messages, dataset_context=dataset_context)
         print(f'PROMPT: {prompt}')
 
         model = ChatOpenAI()
@@ -94,7 +99,7 @@ def new_chat_message(query_text, user_id, conversation_id, selected_dataset_id: 
             id=str(uuid.uuid4()),
             message=str(response_text.content),
             user_name="RealTimeDoc AI",
-            timestamp=datetime.now(pytz.utc).isoformat(),
+            timestamp=datetime.now(pytz.utc).strftime("%m/%d/%Y"),
             conversation_id=conversation_id,
             conversation_title=""
         )
@@ -103,7 +108,7 @@ def new_chat_message(query_text, user_id, conversation_id, selected_dataset_id: 
             id=str(uuid.uuid4()),
             message=query_text,
             user_name='User',
-            timestamp=datetime.now(pytz.utc).isoformat(),
+            timestamp=datetime.now(pytz.utc).strftime("%m/%d/%Y"),
             conversation_id=conversation_id,
             conversation_title="",
             all_messages=[],
@@ -112,7 +117,7 @@ def new_chat_message(query_text, user_id, conversation_id, selected_dataset_id: 
         )
         try:
             db.insert_message(message_data=new_user_message)
-            db.insert_message(message_data=new_user_message)
+            db.insert_message(message_data=new_bot_message)
         except Exception as e:
             print(f"Error inserting messages: {str(e)}")
         return new_bot_message
@@ -129,18 +134,57 @@ def get_user_conversations(user_id) -> List[Conversation]:
     db = PostgresDatabase(host=POSTGRES_HOST, port=POSTGRES_PORT)
     return db.get_user_conversations(user_id)
 
-def init_conversation(userId: str, document: Document) -> Conversation|str:
-    init_embedding_response = initialize_embedding(userId, document, document.metadata['filename'])
+def init_conversation(user_id: str, document: Document) -> Conversation|str:
+    db = PostgresDatabase(host=POSTGRES_HOST, port=POSTGRES_PORT)
+    user_quota = db.get_quota(user_id)
+    if(user_quota == None):
+        initial_admission_date = datetime.now(pytz.utc).strftime("%m/%d/%Y")
+        db.insert_quota(user_id=user_id, initial_admission_date=initial_admission_date, daily_counter=1, daily_max=10, total_counter=1)
+    else:
+        current_date = datetime.now(pytz.utc).date()
+        previous_date = datetime.strptime(str(user_quota[1]), "%m/%d/%Y").date()
+        '''
+                INSERT INTO quotas (
+                    user_id,
+                    admission_date,
+                    daily_counter,
+                    daily_max,
+                    total_counter
+                ) 
+        '''
+        if current_date == previous_date and user_quota[2] >= user_quota[3]:
+            return f"NO QUOTA: User has reached their daily quota of {user_quota[3]} conversations."
+        elif current_date != previous_date:
+            db.reset_and_admit_quota(user_id, user_quota[3])
+        else:
+            db.admit_quota(user_id, user_quota[3])
+    init_embedding_response = initialize_embedding(user_id, document, document.metadata['filename'])
     if init_embedding_response:
-        logger.info(f"[(func) create_conversation] Embedding initialized for user {userId} with conversation ID {init_embedding_response.conversation_id}")
+        logger.info(f"[(func) create_conversation] Embedding initialized for user {user_id} with conversation ID {init_embedding_response.conversation_id}")
         db = PostgresDatabase(host=POSTGRES_HOST, port=POSTGRES_PORT)
         conversation = Conversation(
             id=init_embedding_response.conversation_id,
             title=init_embedding_response.conversation_title,
             messages=[init_embedding_response]
         )
-        db.insert_conversation(conversation, user_id=userId)
+        db.insert_conversation(conversation, user_id=user_id)
         db.insert_message(message_data=init_embedding_response)
         return conversation
     else:
         raise Exception(f"Could not create new embedding. Result: {init_embedding_response}")
+    
+def get_dataset_context(selected_dataset_id: str, query_text: str) -> str|None:
+    if selected_dataset_id is not None:
+        dataset_service = DataSetService()
+        result = None
+        if selected_dataset_id == "financial_news":
+            result = dataset_service.get_financial_news(query_text)
+        elif selected_dataset_id == "us_consumer_spending":
+            result = dataset_service.get_spending_context(query_text, dataset_id='us_consumer_spending')
+        elif selected_dataset_id == "us_national_spending":
+            result = dataset_service.get_spending_context(query_text, dataset_id='us_national_spending')
+        else:
+            logger.error(f"'{selected_dataset_id}' is not a recognized dataset.")
+            return None
+        return '\n\n'.join(result)
+    return None

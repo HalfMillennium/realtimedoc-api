@@ -56,3 +56,12 @@ class Conversation:
         self.title = title
         self.messages = messages
         self.metadata = metadata
+
+@dataclass
+class Quota:
+    def __init__(self, user_id: str, admission_date: str, daily_counter: int, daily_max: int, total_counter: int):
+        self.user_id = user_id
+        self.admission_date = admission_date
+        self.daily_counter = daily_counter
+        self.daily_max = daily_max
+        self.total_counter = total_counter

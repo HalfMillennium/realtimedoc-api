@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from typing import Optional
 from langchain.schema import Document
 from logic.database_logic.messages import new_chat_message, get_user_conversations, init_conversation
-from logic.database_logic.manage_chroma import initialize_embedding, clear_all_embeddings
+from logic.database_logic.manage_chroma import clear_all_embeddings
 from logic.database_logic.types import Conversation
 import PyPDF2
 
@@ -49,7 +49,7 @@ async def create_conversation(file: UploadFile, userId: str):
         page_content=page_content,
         metadata={"filename": file.filename, "content_type": file.content_type}
     )
-    create_convo_response = init_conversation(userId, document)
+    create_convo_response = init_conversation(user_id=userId, document=document)
     if isinstance(create_convo_response, Conversation):
         logger.info(f"[/create-convo] Conversation created for user {userId} with conversation ID {create_convo_response.id}")
         #initialize_conversation_messages(userId, init_embedding_response.conversationId)

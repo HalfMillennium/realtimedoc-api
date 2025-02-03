@@ -2,8 +2,8 @@ import torch
 from transformers import AutoTokenizer, AutoModel
 
 CHROMA_PATH = "chroma"
-CONSUMER_SPENDING_DATA = "../data/spending/us_consumers_october"
-NATIONAL_SPENDING_DATA = "../data/spending/us_national_november"
+CONSUMER_SPENDING_DATA = "/Users/gchestnut/Documents/Repos/realtimedoc-api/data/consumer_spending"
+NATIONAL_SPENDING_DATA = "/Users/gchestnut/Documents/Repos/realtimedoc-api/data/national_spending"
 
 # Load HuggingFace model and tokenizer
 model_name = "sentence-transformers/all-MiniLM-L6-v2"
