@@ -8,6 +8,7 @@ from langchain.schema import Document
 from logic.database_logic.messages import new_chat_message, get_user_conversations, init_conversation
 from logic.database_logic.manage_chroma import clear_all_embeddings
 from logic.database_logic.types import Conversation
+from logic.database_logic.postgres.main import PostgresDatabase
 import PyPDF2
 
 app = FastAPI()
@@ -61,6 +62,12 @@ async def create_conversation(file: UploadFile, userId: str):
 async def get_conversations(userId: str):
     user_conversations = get_user_conversations(userId)
     return user_conversations
+
+@app.get('/quotas/{userId}')
+async def get_quotas(userId: str):
+    db = PostgresDatabase()
+    user_quotas = db.get_quota(userId)
+    return user_quotas
 
 @app.post("/new-message/{conversation_id}")
 async def new_message(conversation_id: str, body: dict):

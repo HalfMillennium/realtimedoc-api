@@ -5,15 +5,16 @@ import json
 import logging
 import datetime
 import pytz
+import os
 
 class PostgresDatabase:
-    def __init__(self, host, port):
+    def __init__(self):
         self.conn = psycopg2.connect(
-            dbname='realtimedoc',
-            user='postgres',
-            password='admin',
-            host=host,
-            port=port
+            dbname=os.getenv("POSTGRES_DB", "postgres"),
+            user=os.getenv("POSTGRES_USER", "postgres"),
+            password=os.getenv("POSTGRES_PASSWORD", "admin"),
+            host=os.getenv("POSTGRES_HOST", "postgres-db"),  # Updated service name
+            port=int(os.getenv("POSTGRES_PORT", 5432))
         )
         self.cur = self.conn.cursor()
         logging.basicConfig(level=logging.INFO)
@@ -52,7 +53,7 @@ class PostgresDatabase:
         self.cur.execute("""
             CREATE TABLE quotas (
                 user_id TEXT PRIMARY KEY,
-                admission_date DATE,
+                admission_date TEXT,
                 daily_counter INTEGER,
                 daily_max INTEGER,
                 total_counter INTEGER
@@ -108,7 +109,7 @@ class PostgresDatabase:
     
     def get_quota(self, user_id):
         self.cur.execute("""
-            SELECT * FROM quotas WHERE user_id=%s
+            SELECT * FROM quotas WHERE user_id='%s'
         """, (user_id,))
         data = self.cur.fetchall()
         self.logger.info(f"Quota data: {data}")
@@ -190,6 +191,11 @@ class PostgresDatabase:
             })
         return conversations
     
+    def get_user_quota(self, user_id):
+        self.cur.execute("SELECT * FROM quotas WHERE user_id=%s", (user_id,))
+        data = self.cur.fetchall()
+        return data[0] if data and len(data) > 0 else None
+    
     def get_conversation(self, conversation_id) -> Conversation | None:
         try:
             # Fetch conversation data
@@ -219,7 +225,7 @@ class PostgresDatabase:
             return None
     
 if __name__ == '__main__':
-    db = PostgresDatabase(host='localhost', port=5432)
+    db = PostgresDatabase()
     db.create_tables()
 
     example_conversation_id = 1

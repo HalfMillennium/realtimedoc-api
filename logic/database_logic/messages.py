@@ -1,5 +1,3 @@
-from langchain_community.vectorstores import Chroma
-from langchain_openai import OpenAIEmbeddings
 from langchain_openai import ChatOpenAI
 import chromadb
 from dotenv import load_dotenv
@@ -31,24 +29,21 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 PROMPT_TEMPLATE = """
-Answer the question based on the following context:
+You are an expert assistant. Answer the user's question by using the following context:
 
+**Document Context - Dataset Name: {dataset_name}**
+{dataset_context}
+
+**Conversation History:**
+{conversation_history}
+
+**User's Question:**
+{question}
+
+**Primary Context**
 {context}
 
----
-
-External Dataset Context:
-
-{dataset_context}
----
-
-Also consider the conversation history: {conversation_history}, and make this response a continuation of that history.
-
----
-
-Answer the question based on the above context: {question}
-
-Use the content as context, but don't explicity refer to it as context in responses, it should be a natural part of the conversation.
+Please provide a natural, conversational answer without explicitly stating that you are using different contexts.
 """
 
 POSTGRES_HOST = 'localhost'
@@ -56,7 +51,7 @@ POSTGRES_PORT = 5432
 
 def new_chat_message(query_text, user_id, conversation_id, selected_dataset_id: str|None=None) -> MessageDBResponse:
     try:
-        db = PostgresDatabase(host=POSTGRES_HOST, port=POSTGRES_PORT)
+        db = PostgresDatabase()
         client = chromadb.PersistentClient(path=CHROMA_PATH)
         warning = ""
         # Load the existing embedding
@@ -87,9 +82,8 @@ def new_chat_message(query_text, user_id, conversation_id, selected_dataset_id: 
         existing_messages = conversation.messages if conversation is not None else []
 
         prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
-        prompt = prompt_template.format(context=context_text, question=query_text, conversation_history=existing_messages, dataset_context=dataset_context)
-        print(f'PROMPT: {prompt}')
-
+        prompt = prompt_template.format(context=context_text, question=query_text, conversation_history=existing_messages, dataset_context=dataset_context, dataset_name=selected_dataset_id)
+        logger.info(f'PROMPT: {prompt}')
         model = ChatOpenAI()
         response_text = model.invoke(prompt)
 
@@ -131,37 +125,38 @@ def new_chat_message(query_text, user_id, conversation_id, selected_dataset_id: 
         )
     
 def get_user_conversations(user_id) -> List[Conversation]:
-    db = PostgresDatabase(host=POSTGRES_HOST, port=POSTGRES_PORT)
+    db = PostgresDatabase()
     return db.get_user_conversations(user_id)
 
-def init_conversation(user_id: str, document: Document) -> Conversation|str:
-    db = PostgresDatabase(host=POSTGRES_HOST, port=POSTGRES_PORT)
+def init_conversation(user_id: str, document: Document, is_premium_user = False) -> Conversation|str:
+    db = PostgresDatabase()
     user_quota = db.get_quota(user_id)
-    if(user_quota == None):
-        initial_admission_date = datetime.now(pytz.utc).strftime("%m/%d/%Y")
-        db.insert_quota(user_id=user_id, initial_admission_date=initial_admission_date, daily_counter=1, daily_max=10, total_counter=1)
-    else:
-        current_date = datetime.now(pytz.utc).date()
-        previous_date = datetime.strptime(str(user_quota[1]), "%m/%d/%Y").date()
-        '''
-                INSERT INTO quotas (
-                    user_id,
-                    admission_date,
-                    daily_counter,
-                    daily_max,
-                    total_counter
-                ) 
-        '''
-        if current_date == previous_date and user_quota[2] >= user_quota[3]:
-            return f"NO QUOTA: User has reached their daily quota of {user_quota[3]} conversations."
-        elif current_date != previous_date:
-            db.reset_and_admit_quota(user_id, user_quota[3])
+    if(not is_premium_user):
+        if(user_quota == None):
+            initial_admission_date = datetime.now(pytz.utc).strftime("%m/%d/%Y")
+            db.insert_quota(user_id=user_id, initial_admission_date=initial_admission_date, daily_counter=1, daily_max=10, total_counter=1)
         else:
-            db.admit_quota(user_id, user_quota[3])
+            current_date = datetime.now(pytz.utc).date()
+            previous_date = datetime.strptime(str(user_quota[1]), "%m/%d/%Y").date()
+            '''
+                    INSERT INTO quotas (
+                        user_id,
+                        admission_date,
+                        daily_counter,
+                        daily_max,
+                        total_counter
+                    ) 
+            '''
+            if current_date == previous_date and user_quota[2] >= user_quota[3]:
+                return f"NO QUOTA: User has reached their daily quota of {user_quota[3]} conversations."
+            elif current_date != previous_date:
+                db.reset_and_admit_quota(user_id, user_quota[3])
+            else:
+                db.admit_quota(user_id, user_quota[3])
     init_embedding_response = initialize_embedding(user_id, document, document.metadata['filename'])
     if init_embedding_response:
         logger.info(f"[(func) create_conversation] Embedding initialized for user {user_id} with conversation ID {init_embedding_response.conversation_id}")
-        db = PostgresDatabase(host=POSTGRES_HOST, port=POSTGRES_PORT)
+        db = PostgresDatabase()
         conversation = Conversation(
             id=init_embedding_response.conversation_id,
             title=init_embedding_response.conversation_title,
