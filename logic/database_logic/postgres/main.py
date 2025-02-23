@@ -105,7 +105,7 @@ class PostgresDatabase:
     
     def get_quota(self, user_id):
         self.cur.execute("""
-            SELECT * FROM quotas WHERE user_id='%s'
+            SELECT * FROM quotas WHERE user_id=%s
         """, (user_id,))
         data = self.cur.fetchall()
         return data[0] if data and len(data) > 0 else None
