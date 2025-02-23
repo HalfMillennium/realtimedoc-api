@@ -1,16 +1,17 @@
 from io import BytesIO
 import logging
-from fastapi import FastAPI, UploadFile, HTTPException
+from fastapi import FastAPI, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from langchain.schema import Document
-from logic.database_logic.messages import new_chat_message, init_conversation
+from logic.database_logic.messages import new_chat_message, get_user_conversations, init_conversation
 from logic.database_logic.manage_chroma import clear_all_embeddings
 from logic.database_logic.types import Conversation
 from logic.database_logic.postgres.main import PostgresDatabase
 from llama_cloud_services import LlamaParse
 from dotenv import load_dotenv
+
 import os
 
 app = FastAPI()
@@ -41,7 +42,7 @@ app.add_middleware(
 )
 
 @app.post("/create-convo/{userId}")
-async def create_conversation(file: UploadFile, userId: str, productTypeId: str):
+async def create_conversation(file: UploadFile, userId: str, productTypeId: str = Form(...)):
     is_premium_user = productTypeId == SUBSCRIPTION_PRODUCTS["RESEARCHER_PRO"]
     # Read the file contents
     content = await file.read()
@@ -57,7 +58,7 @@ async def create_conversation(file: UploadFile, userId: str, productTypeId: str)
         temp_filename = file.filename or "uploaded_file"
         
         # Parse document using LlamaParse
-        raw_documents = parser.load_data(
+        raw_documents = await parser.aload_data(
             content,  # Pass the bytes content directly
             extra_info={
                 "file_name": temp_filename,
@@ -101,6 +102,11 @@ async def create_conversation(file: UploadFile, userId: str, productTypeId: str)
             status_code=500,
             detail=f"Error processing document: {str(e)}"
         )
+        
+@app.get('/conversations/{userId}')
+async def get_conversations(userId: str):
+    user_conversations = get_user_conversations(userId)
+    return user_conversations
 
 @app.get('/quotas/{userId}')
 async def get_quotas(userId: str):
