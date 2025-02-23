@@ -9,28 +9,24 @@ class DataSetService:
     def __init__(self):
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
-
+        
     def get_spending_context(self, query_text, dataset_id = 'us_consumer_spending') -> List[str]:
-        self.logger.info(f"BLOOP: Querying spending context for dataset: {dataset_id}")
         client = chromadb.PersistentClient(path=CHROMA_PATH)
         warning = ""
         collection = None
         try:
             collection = client.get_collection(name=f"{dataset_id}_embeddings")
         except:
-            self.logger.info(f"Initializing spending database: {dataset_id}_embeddings")
             file_path = CONSUMER_SPENDING_DATA if dataset_id == 'us_consumer_spending' else NATIONAL_SPENDING_DATA
             init_spending_db_result = generate_data_store(collectionId=dataset_id, path=file_path, file_type="*.pdf")
             collection = client.get_collection(name=f"{dataset_id}_embeddings")
-            self.logger.info(f"SPENDING INIT RESULTS: {init_spending_db_result}; Collection: {collection}")
 
         query_embedding = embed_text(query_text)
         results = collection.query(
             query_embeddings=[query_embedding], # type: ignore
             n_results=10,
-            include=["documents", "metadatas", "distances"]
+            include=["documents", "metadatas", "distances"] # type: ignore
         )
-        self.logger.info(f"query_text: {query_text}, results: {results}")
         documents = []
         if len(results) != 0:
             documents = results["documents"][0] if results["documents"] is not None else []

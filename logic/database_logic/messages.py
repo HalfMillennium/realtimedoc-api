@@ -9,7 +9,6 @@ from ..utils import CHROMA_PATH, embed_text
 from langchain.schema import Document
 from ..dataset_tools.financial_news.get_market_news import query_market
 from .types import MessageDBResponse, Conversation
-import logging
 from .postgres.main import PostgresDatabase
 from .manage_chroma import initialize_embedding
 from ..dataset_tools.dataset_service import DataSetService
@@ -23,10 +22,6 @@ load_dotenv()
 # Change environment variable name from "OPENAI_API_KEY" to the name given in 
 # your .env file.
 openai.api_key = os.environ['OPENAI_API_KEY']
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 PROMPT_TEMPLATE = """
 You are an expert assistant. Answer the user's question by using the following context:
@@ -74,16 +69,13 @@ def new_chat_message(query_text, user_id, conversation_id, selected_dataset_id: 
         # Get context from dataset, if one is selected
         if selected_dataset_id != None:
             dataset_context = get_dataset_context(selected_dataset_id, query_text)
-            logger.info(f"Dataset context: {dataset_context} for dataset {selected_dataset_id}")
-        else:
-            logger.info("No dataset selected.")
+
         # Get context from the conversation history
         conversation = db.get_conversation(conversation_id)
         existing_messages = conversation.messages if conversation is not None else []
 
         prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
         prompt = prompt_template.format(context=context_text, question=query_text, conversation_history=existing_messages, dataset_context=dataset_context, dataset_name=selected_dataset_id)
-        logger.info(f'PROMPT: {prompt}')
         model = ChatOpenAI()
         response_text = model.invoke(prompt)
 
@@ -101,7 +93,7 @@ def new_chat_message(query_text, user_id, conversation_id, selected_dataset_id: 
         new_user_message = MessageDBResponse(
             id=str(uuid.uuid4()),
             message=query_text,
-            user_name='User',
+            user_name='You',
             timestamp=datetime.now(pytz.utc).strftime("%m/%d/%Y"),
             conversation_id=conversation_id,
             conversation_title="",
@@ -155,7 +147,6 @@ def init_conversation(user_id: str, document: Document, is_premium_user = False)
                 db.admit_quota(user_id, user_quota[3])
     init_embedding_response = initialize_embedding(user_id, document, document.metadata['filename'])
     if init_embedding_response:
-        logger.info(f"[(func) create_conversation] Embedding initialized for user {user_id} with conversation ID {init_embedding_response.conversation_id}")
         db = PostgresDatabase()
         conversation = Conversation(
             id=init_embedding_response.conversation_id,
@@ -178,8 +169,6 @@ def get_dataset_context(selected_dataset_id: str, query_text: str) -> str|None:
             result = dataset_service.get_spending_context(query_text, dataset_id='us_consumer_spending')
         elif selected_dataset_id == "us_national_spending":
             result = dataset_service.get_spending_context(query_text, dataset_id='us_national_spending')
-        else:
-            logger.error(f"'{selected_dataset_id}' is not a recognized dataset.")
-            return None
+        return None
         return '\n\n'.join(result)
     return None

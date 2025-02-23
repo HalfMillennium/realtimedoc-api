@@ -21,8 +21,8 @@ SUBSCRIPTION_PRODUCTS = {
 }
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+#logging.basicConfig(level=logging.INFO)
+# logger = logging.get# logger(__name__)
 app = FastAPI()
 
 # Add CORS middleware
@@ -87,7 +87,7 @@ async def create_conversation(file: UploadFile, userId: str, productTypeId: str)
         create_convo_response = init_conversation(user_id=userId, document=document, is_premium_user=is_premium_user)
         
         if isinstance(create_convo_response, Conversation):
-            logger.info(f"[/create-convo] Conversation created for user {userId} with conversation ID {create_convo_response.id}")
+            # logger.info(f"[/create-convo] Conversation created for user {userId} with conversation ID {create_convo_response.id}")
             return create_convo_response.messages[0].as_json_string()
             
         raise HTTPException(
@@ -96,7 +96,7 @@ async def create_conversation(file: UploadFile, userId: str, productTypeId: str)
         )
         
     except Exception as e:
-        logger.error(f"Error processing document: {str(e)}")
+        # logger.error(f"Error processing document: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error processing document: {str(e)}"
@@ -106,7 +106,7 @@ async def create_conversation(file: UploadFile, userId: str, productTypeId: str)
 async def get_quotas(userId: str):
     db = PostgresDatabase()
     user_quotas = db.get_quota(userId)
-    logger.info(f"User quotas: {user_quotas}")
+    # logger.info(f"User quotas: {user_quotas}")
     return {"quotas": user_quotas}
 
 @app.post("/new-message/{conversation_id}")
@@ -114,7 +114,7 @@ async def new_message(conversation_id: str, body: dict):
     query_text = body.get("queryText")
     dataset_id = body.get("dataSetId")
     user_id = body.get("userId")
-    logger.info(f"Request body {body}")
+    # logger.info(f"Request body {body}")
     new_message_response = new_chat_message(query_text=query_text, user_id=user_id, conversation_id=conversation_id, selected_dataset_id=dataset_id)
     return new_message_response.as_json_string()
 

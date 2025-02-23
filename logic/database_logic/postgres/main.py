@@ -2,7 +2,6 @@ import psycopg2
 from ..types import Conversation, MessageDBResponse
 from typing import List
 import json
-import logging
 import datetime
 import pytz
 import os
@@ -17,8 +16,6 @@ class PostgresDatabase:
             port=int(os.getenv("POSTGRES_PORT", 5432))
         )
         self.cur = self.conn.cursor()
-        logging.basicConfig(level=logging.INFO)
-        self.logger = logging.getLogger(__name__)
 
     def close(self):
         self.cur.close()
@@ -73,7 +70,6 @@ class PostgresDatabase:
         self.conn.commit()
 
     def insert_quota(self, user_id, initial_admission_date, daily_counter, daily_max, total_counter):
-        self.logger.info('TIMESTAMP', initial_admission_date)
         self.cur.execute("""
             INSERT INTO quotas (
                 user_id,
@@ -112,7 +108,6 @@ class PostgresDatabase:
             SELECT * FROM quotas WHERE user_id='%s'
         """, (user_id,))
         data = self.cur.fetchall()
-        self.logger.info(f"Quota data: {data}")
         return data[0] if data and len(data) > 0 else None
     
     def reset_and_admit_quota(self, user_id, daily_max):
@@ -180,7 +175,6 @@ class PostgresDatabase:
         conversations = []
         
         for convo in data:
-            self.logger.info(f"Conversation: {convo}")
             self.cur.execute("SELECT * FROM messages WHERE conversation_id=%s", (convo[0],))
             messages = self.cur.fetchall()
             conversations.append({ 

@@ -20,8 +20,8 @@ DEFAULT_BOT_MESSAGE = "Hi there! I've gone through your document and know it lik
 load_dotenv()
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# logging.basicConfig(level=logging.INFO)
+# logger = logging.get# logger(__name__)
 
 def generate_data_store(collectionId: str, document: Document|None = None, path: str|None = None, file_type: str|None = None) -> str:
     documents = [document] if document else load_pdf_documents(path, file_type)
@@ -35,11 +35,11 @@ def load_pdf_documents(path, file_type) -> list[Document]:
         documents = loader.load()
         return documents
     except FileNotFoundError as e:
-        logger.info('FILE PATH: ' + os.path.abspath(path))
-        logger.error(f"File not found: {e}")
+        # logger.info('FILE PATH: ' + os.path.abspath(path))
+        # logger.error(f"File not found: {e}")
         return []
     except IOError as e:
-        logger.error(f"Error reading file: {e}")
+        # logger.error(f"Error reading file: {e}")
         return []
 
 def split_text(documents: list[Document]) -> list[Document]:
@@ -50,7 +50,7 @@ def split_text(documents: list[Document]) -> list[Document]:
         add_start_index=True,
     )
     chunks = text_splitter.split_documents(documents)
-    logger.info(f"Split {len(documents)} documents into {len(chunks)} chunks.")
+    # logger.info(f"Split {len(documents)} documents into {len(chunks)} chunks.")
     return chunks
 
 def save_embedding_to_db(chunks: list[Document], conversationId: str) -> str:
@@ -79,18 +79,18 @@ def save_embedding_to_db(chunks: list[Document], conversationId: str) -> str:
             embeddings=embeddings,
         )
 
-        logger.info(f"Saved {len(chunks)} embeddings to the database in collection {conversationId}_embeddings.")
+        # logger.info(f"Saved {len(chunks)} embeddings to the database in collection {conversationId}_embeddings.")
         return f"Saved {len(chunks)} embeddings to the database in collection {conversationId}_embeddings."
     except Exception as e:
-        logger.error(f"Failed to save embeddings to the database: {e}, attempted {conversationId}")
+        # logger.error(f"Failed to save embeddings to the database: {e}, attempted {conversationId}")
         return f"Failed to save embeddings to the database: {e}, attempted {conversationId}"
     
 def clear_embeddings():
     if os.path.exists(CHROMA_PATH):
         shutil.rmtree(CHROMA_PATH)
-        logger.info(f"Cleared the database at {CHROMA_PATH}.")
+        # logger.info(f"Cleared the database at {CHROMA_PATH}.")
         return True
-    logger.info(f"Could not find database at {CHROMA_PATH}.")
+    # logger.info(f"Could not find database at {CHROMA_PATH}.")
     return False
 
 def initialize_embedding(userId: str, document: Document, fileName: str) -> MessageDBResponse:

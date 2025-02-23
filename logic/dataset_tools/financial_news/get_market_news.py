@@ -10,7 +10,7 @@ import os
 import logging
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# logger = logging.get# logger(__name__)
 
 # Get today's date
 today = datetime.today()
@@ -61,7 +61,7 @@ def execute_request(url: str) -> MarketQueryResult:
         ]
         return MarketQueryResult(success=True, articles=articles)
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error: {e}")
+        # logger.error(f"Error: {e}")
         return MarketQueryResult(success=False, error_message=str(e))
 
 def parse_request(data: List[dict]) -> MarketQueryResult:
@@ -84,7 +84,7 @@ def query_market(original_query: str) -> MarketQueryResult:
         question=original_query,
         formatted_date=formatted_date
     )
-    logger.info(prompt)
+    # logger.info(prompt)
     
     model = ChatOpenAI(model="gpt-4")
     response = model.invoke(prompt)
