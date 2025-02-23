@@ -12,17 +12,19 @@ services:
       - "5432:5432"
 
   server:
-    build: .  # Builds the image from Dockerfile
+    build: .
     ports:
-      - "8000:8000"  # Maps container port 8000 to host
+      - "8000:8000"
     depends_on:
-      - postgres-db  # Ensures the DB starts first
+      - postgres-db
     environment:
       POSTGRES_DB: postgres
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: admin
       POSTGRES_HOST: postgres-db
       POSTGRES_PORT: 5432
+    volumes:
+      - ./chromadb_data:/app/chromadb
 
   pgadmin:
     image: dpage/pgadmin4

@@ -1,17 +1,24 @@
 from io import BytesIO
 import logging
-from fastapi import FastAPI, UploadFile
+from fastapi import FastAPI, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from langchain.schema import Document
-from logic.database_logic.messages import new_chat_message, get_user_conversations, init_conversation
+from logic.database_logic.messages import new_chat_message, init_conversation
 from logic.database_logic.manage_chroma import clear_all_embeddings
 from logic.database_logic.types import Conversation
 from logic.database_logic.postgres.main import PostgresDatabase
-import PyPDF2
+from llama_cloud_services import LlamaParse
+from dotenv import load_dotenv
+import os
 
 app = FastAPI()
+
+SUBSCRIPTION_PRODUCTS = {
+    "RESEARCHER_LITE": 'prod_RYxGo5f1mjy7Q6',
+    "RESEARCHER_PRO": 'prod_RYxJXeQ0LKIXLb',
+}
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -34,40 +41,73 @@ app.add_middleware(
 )
 
 @app.post("/create-convo/{userId}")
-async def create_conversation(file: UploadFile, userId: str):
+async def create_conversation(file: UploadFile, userId: str, productTypeId: str):
+    is_premium_user = productTypeId == SUBSCRIPTION_PRODUCTS["RESEARCHER_PRO"]
     # Read the file contents
     content = await file.read()
-
-    if file.content_type == "application/pdf":
-        pdf_reader = PyPDF2.PdfReader(BytesIO(content))
-        page_content = " ".join(page.extract_text() for page in pdf_reader.pages)
-    else:
-        # Treat as text file (for now)
-        page_content = content.decode('utf-8')
-
-    # Convert to langchain.schema.Document
-    document = Document(
-        page_content=page_content,
-        metadata={"filename": file.filename, "content_type": file.content_type}
+    load_dotenv()
+    # Initialize LlamaParse client
+    parser = LlamaParse(
+        api_key=os.environ['LLAMA_CLOUD_API_KEY'],
+        verbose=True
     )
-    create_convo_response = init_conversation(user_id=userId, document=document)
-    if isinstance(create_convo_response, Conversation):
-        logger.info(f"[/create-convo] Conversation created for user {userId} with conversation ID {create_convo_response.id}")
-        #initialize_conversation_messages(userId, init_embedding_response.conversationId)
-        return create_convo_response.messages[0].as_json_string()
-
-    return {"message": f"Could not create new conversation. Result: {create_convo_response}"}
-
-@app.get('/conversations/{userId}')
-async def get_conversations(userId: str):
-    user_conversations = get_user_conversations(userId)
-    return user_conversations
+    
+    try:
+        # Create a temporary file name for content tracking
+        temp_filename = file.filename or "uploaded_file"
+        
+        # Parse document using LlamaParse
+        raw_documents = parser.load_data(
+            content,  # Pass the bytes content directly
+            extra_info={
+                "file_name": temp_filename,
+                "content_type": file.content_type
+            }
+        )
+        
+        if not raw_documents:
+            raise ValueError("No content extracted from document")
+            
+        # Convert documents to langchain format
+        documents = [doc.to_langchain_format() for doc in raw_documents]
+            
+        # Combine all documents into one if multiple pages were returned
+        combined_text = "\n\n".join(doc.page_content for doc in documents)
+        
+        # Create final document for conversation initialization
+        document = Document(
+            page_content=combined_text,
+            metadata={
+                "filename": file.filename,
+                "content_type": file.content_type,
+                "parsed_by": "llamaparse"
+            }
+        )
+        
+        create_convo_response = init_conversation(user_id=userId, document=document, is_premium_user=is_premium_user)
+        
+        if isinstance(create_convo_response, Conversation):
+            logger.info(f"[/create-convo] Conversation created for user {userId} with conversation ID {create_convo_response.id}")
+            return create_convo_response.messages[0].as_json_string()
+            
+        raise HTTPException(
+            status_code=403,
+            detail=f"Could not create new conversation. Result: {create_convo_response}"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error processing document: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing document: {str(e)}"
+        )
 
 @app.get('/quotas/{userId}')
 async def get_quotas(userId: str):
     db = PostgresDatabase()
     user_quotas = db.get_quota(userId)
-    return user_quotas
+    logger.info(f"User quotas: {user_quotas}")
+    return {"quotas": user_quotas}
 
 @app.post("/new-message/{conversation_id}")
 async def new_message(conversation_id: str, body: dict):

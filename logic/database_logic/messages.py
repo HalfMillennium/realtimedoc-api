@@ -62,7 +62,7 @@ def new_chat_message(query_text, user_id, conversation_id, selected_dataset_id: 
         results = embeddings_collection.query(
             query_embeddings=[query_embedding], # type: ignore
             n_results=10,
-            include=["documents", "metadatas", "distances"]
+            include=["documents", "metadatas", "distances"] # type: ignore
         )
 
         if len(results) == 0:
@@ -139,13 +139,13 @@ def init_conversation(user_id: str, document: Document, is_premium_user = False)
             current_date = datetime.now(pytz.utc).date()
             previous_date = datetime.strptime(str(user_quota[1]), "%m/%d/%Y").date()
             '''
-                    INSERT INTO quotas (
-                        user_id,
-                        admission_date,
-                        daily_counter,
-                        daily_max,
-                        total_counter
-                    ) 
+            INSERT INTO quotas (
+                user_id,
+                admission_date,
+                daily_counter,
+                daily_max,
+                total_counter
+            ) 
             '''
             if current_date == previous_date and user_quota[2] >= user_quota[3]:
                 return f"NO QUOTA: User has reached their daily quota of {user_quota[3]} conversations."

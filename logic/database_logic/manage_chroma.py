@@ -8,11 +8,10 @@ import shutil
 import logging
 import uuid
 from ..utils import CHROMA_PATH, embed_text
-from .types import MessageDBResponse, Conversation
+from .types import MessageDBResponse
 from datetime import datetime
-import pytz  # For timezone handling
+import pytz
 import numpy as np
-from ..database_logic.postgres.main import PostgresDatabase
 
 
 DEFAULT_BOT_MESSAGE = "Hi there! I've gone through your document and know it like the back of my hand. Go ahead — ask me anything!"
@@ -26,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 def generate_data_store(collectionId: str, document: Document|None = None, path: str|None = None, file_type: str|None = None) -> str:
     documents = [document] if document else load_pdf_documents(path, file_type)
+    # parse with llamaparse
     chunks = split_text(documents)
     return save_embedding_to_db(chunks, collectionId)
     
