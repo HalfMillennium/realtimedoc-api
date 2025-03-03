@@ -1,9 +1,6 @@
-from io import BytesIO
-import logging
+import uvicorn
 from fastapi import FastAPI, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional
 from langchain.schema import Document
 from logic.database_logic.messages import new_chat_message, get_user_conversations, init_conversation
 from logic.database_logic.manage_chroma import clear_all_embeddings
@@ -110,10 +107,10 @@ async def get_conversations(userId: str):
 
 @app.get('/quotas/{userId}')
 async def get_quotas(userId: str):
-    db = PostgresDatabase()
-    user_quotas = db.get_quota(userId)
-    # logger.info(f"User quotas: {user_quotas}")
-    return {"quotas": user_quotas}
+    with PostgresDatabase() as db:
+        user_quotas = db.get_quota(userId)
+        # logger.info(f"User quotas: {user_quotas}")
+        return {"quotas": user_quotas}
 
 @app.post("/new-message/{conversation_id}")
 async def new_message(conversation_id: str, body: dict):
@@ -130,3 +127,11 @@ async def create_convo():
     if(result):
         return {"message": "Database cleared successfully."}
     return {"message": "Database could not be cleared."}
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("server:app", host="0.0.0.0", port=port, reload=True)

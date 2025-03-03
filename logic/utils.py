@@ -1,7 +1,7 @@
 import torch
 from transformers import AutoTokenizer, AutoModel
 
-CHROMA_PATH = "chroma"
+CHROMA_PATH = "/server/chromadb_data"
 CONSUMER_SPENDING_DATA = "/Users/gchestnut/Documents/Repos/realtimedoc-api/data/consumer_spending"
 NATIONAL_SPENDING_DATA = "/Users/gchestnut/Documents/Repos/realtimedoc-api/data/national_spending"
 

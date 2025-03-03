@@ -2,3 +2,4 @@
 chroma
 .DS_Store
 venv/
+application_default_credentials.json

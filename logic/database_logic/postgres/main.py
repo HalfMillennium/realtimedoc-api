@@ -1,26 +1,64 @@
-import psycopg2
-from ..types import Conversation, MessageDBResponse
-from typing import List
-import json
+import os
 import datetime
 import pytz
-import os
+import json
+from typing import List
+from ..types import Conversation
+from psycopg2 import pool
+from dotenv import load_dotenv
 
 class PostgresDatabase:
-    def __init__(self):
-        self.conn = psycopg2.connect(
-            dbname=os.getenv("POSTGRES_DB", "postgres"),
-            user=os.getenv("POSTGRES_USER", "postgres"),
-            password=os.getenv("POSTGRES_PASSWORD", "admin"),
-            host=os.getenv("POSTGRES_HOST", "postgres-db"),  # Updated service name
-            port=int(os.getenv("POSTGRES_PORT", 5432))
+    _connection_pool = None
+    
+    @classmethod
+    def initialize_pool(cls):
+        # Load environment variables
+        load_dotenv()
+        
+        # Get database connection string from environment
+        connection_string = os.getenv('DATABASE_URL')
+        
+        # If no DATABASE_URL is found, fall back to individual parameters
+        if not connection_string:
+            connection_string = f"dbname={os.getenv('POSTGRES_DB', 'postgres')} " \
+                               f"user={os.getenv('POSTGRES_USER', 'postgres')} " \
+                               f"password={os.getenv('POSTGRES_PASSWORD', 'admin')} " \
+                               f"host={os.getenv('POSTGRES_HOST', 'postgres-db')} " \
+                               f"port={os.getenv('POSTGRES_PORT', 5432)}"
+        
+        # Create a connection pool
+        cls._connection_pool = pool.SimpleConnectionPool(
+            1,  # Minimum number of connections in the pool
+            10,  # Maximum number of connections in the pool
+            connection_string
         )
+        
+        if cls._connection_pool:
+            print("Connection pool created successfully")
+    
+    def __init__(self):
+        # Initialize the pool if it hasn't been initialized yet
+        if PostgresDatabase._connection_pool is None:
+            PostgresDatabase.initialize_pool()
+        
+        # Get a connection from the pool
+        self.conn = PostgresDatabase._connection_pool.getconn() # type: ignore
         self.cur = self.conn.cursor()
-
+        
     def close(self):
-        self.cur.close()
-        self.conn.close()
-
+        # Close cursor and return connection to the pool
+        if self.cur:
+            self.cur.close()
+        
+        if self.conn and PostgresDatabase._connection_pool:
+            PostgresDatabase._connection_pool.putconn(self.conn)
+    
+    @classmethod
+    def close_all(cls):
+        # Close all connections in the pool
+        if cls._connection_pool:
+            cls._connection_pool.closeall()
+    
     def commit(self):
         self.conn.commit()
 
@@ -217,37 +255,9 @@ class PostgresDatabase:
             # Optional: Add error logging or handling
             print(f"Error retrieving conversation: {e}")
             return None
-    
-if __name__ == '__main__':
-    db = PostgresDatabase()
-    db.create_tables()
+        
+    def __enter__(self):
+        return self
 
-    example_conversation_id = 1
-    example_user_id = 1
-    conversation_data_1 = {
-        'id': 1,
-        'conversation_id': example_conversation_id,
-        'title': 'Sample Conversation 3'
-    }
-
-    db.insert_conversation(conversation_data_1, example_user_id)
-
-    all_conversations = db.get_user_conversations(user_id=1)
-    message_data_1 = {
-        'id': '1',
-        'message': 'Hello, how are you?',
-        'user_id': example_user_id,
-        'user_name': 'User1',
-        'timestamp': None,
-        'conversation_id': example_conversation_id,
-        'warning': None,
-        'data_store_generation_response': None,
-        'context_used': None,
-        'sources': None,
-        'metadata': None
-    }
-
-    db.insert_message(message_data_1)
-
-    all_conversations = db.get_user_conversations(user_id=1)
-    print('All conversations:', str(all_conversations))
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()

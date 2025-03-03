@@ -5,7 +5,6 @@ from langchain.schema import Document
 from dotenv import load_dotenv
 import os
 import shutil
-import logging
 import uuid
 from ..utils import CHROMA_PATH, embed_text
 from .types import MessageDBResponse
@@ -76,7 +75,7 @@ def save_embedding_to_db(chunks: list[Document], conversationId: str) -> str:
             documents=documents,
             metadatas=[chunk.metadata for chunk in chunks],
             ids=ids,
-            embeddings=embeddings,
+            embeddings=embeddings, # type: ignore
         )
 
         # logger.info(f"Saved {len(chunks)} embeddings to the database in collection {conversationId}_embeddings.")
