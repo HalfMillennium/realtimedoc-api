@@ -14,6 +14,7 @@ from ..dataset_tools.dataset_service import DataSetService
 from typing import List
 from datetime import datetime
 import pytz
+import time
 
 # Load environment variables. Assumes that project contains .env file with API keys
 load_dotenv()
@@ -42,15 +43,21 @@ Please provide a natural, conversational answer without explicitly stating that 
 
 POSTGRES_HOST = 'localhost'
 POSTGRES_PORT = 5432
+MAX_RETRIES = 3
+RETRY_DELAY = 0.5 # half a second
 
 def new_chat_message(query_text, user_id, conversation_id, selected_dataset_id: str|None=None) -> MessageDBResponse:
     try:
         with PostgresDatabase() as db:
-            client = chromadb.PersistentClient(path=CHROMA_PATH)
             warning = ""
-            # Load the existing embedding
-            embeddings_collection = client.get_collection(name=f"{conversation_id}_embeddings")
-            if(embeddings_collection is None):
+            embeddings_collection = None
+            client = chromadb.PersistentClient(path=CHROMA_PATH)
+            for _ in range(MAX_RETRIES):
+                embeddings_collection = client.get_collection(name=f"{conversation_id}_embeddings")
+                if embeddings_collection is not None:
+                    break
+                time.sleep(RETRY_DELAY)
+            if embeddings_collection is None:
                 return MessageDBResponse(message="Embeddings collection not found.", conversation_id=conversation_id, conversation_title="", warning="Embeddings collection not found.")
             query_embedding = embed_text(query_text)
             results = embeddings_collection.query(

@@ -28,6 +28,14 @@ origins = [
     "http://localhost:5173",
     "http://localhost:5050",
     "http://localhost:5000",
+    "https://realtimedoc.io",
+    "https://www.realtimedoc.io",
+    "https://realtimedoc-gp78sbbol-garrett-chestnuts-projects.vercel.app",
+    "https://www.realtimedoc-gp78sbbol-garrett-chestnuts-projects.vercel.app",
+    "https://realtimedoc-app-git-master-garrett-chestnuts-projects.vercel.app",
+    "https://www.realtimedoc-app-git-master-garrett-chestnuts-projects.vercel.app",
+    "https://realtimedoc-app.vercel.app",
+    "https://www.realtimedoc-app.vercel.app"
 ]
 
 app.add_middleware(
@@ -127,6 +135,10 @@ async def create_convo():
     if(result):
         return {"message": "Database cleared successfully."}
     return {"message": "Database could not be cleared."}
+
+@app.get("/version")
+async def get_app_version():
+    return { "version": '1.0.5'}
 
 @app.get("/health")
 async def health():
